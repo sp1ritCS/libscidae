@@ -1,0 +1,30 @@
+[library]
+version = "@VERSION@"
+authors = "Florian \"sp1rit\""
+license = "AGPL-3.0"
+search_index = true
+
+[dependencies."GLib-2.0"]
+name = "GLib"
+description = "The base utility library"
+docs_url = "https://docs.gtk.org/glib/"
+
+[dependencies."GObject-2.0"]
+name = "GObject"
+description = "The base type system library"
+docs_url = "https://docs.gtk.org/gobject/"
+
+[dependencies."Gio-2.0"]
+name = "GIO"
+description = "GObject Interfaces and Objects, Networking, IPC, and I/O"
+docs_url = "https://docs.gtk.org/gio/"
+
+[dependencies."Gtk-4.0"]
+name = "Gtk"
+description = "The GTK toolkit"
+docs_url = "https://docs.gtk.org/gtk4/"
+
+[extra]
+content_files = []
+content_images = []
+urlmap_file = "scidae_urlmap.js"

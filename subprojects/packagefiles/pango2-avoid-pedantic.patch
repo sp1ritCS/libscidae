@@ -1,0 +1,71 @@
+From 2dde5eeea8d1f8612780dd786fbe45ccc13a1582 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20=22sp1rit=22=E2=80=8B?= <sp1rit@disroot.org>
+Date: Thu, 16 Mar 2023 19:06:28 +0100
+Subject: [PATCH] droped unnecessary semicolons to avoid -Wpedantic warnings
+
+A few G_DECLARE_FINAL_TYPE macro expansions had an unneeded semicolon
+behind them, causing gcc to show a warning when that headerfile was
+included by a CU that is being build with -Wpedantic enabled. This patch
+simply removes the offending semicolons.
+---
+ pango2/pango-context.h      | 2 +-
+ pango2/pango-layout.h       | 2 +-
+ pango2/pango-line-breaker.h | 2 +-
+ pango2/pango-lines.h        | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/pango2/pango-context.h b/pango2/pango-context.h
+index 6a2df34e8..4078add23 100644
+--- a/pango2/pango-context.h
++++ b/pango2/pango-context.h
+@@ -30,7 +30,7 @@ G_BEGIN_DECLS
+ #define PANGO2_TYPE_CONTEXT              (pango2_context_get_type ())
+ 
+ PANGO2_AVAILABLE_IN_ALL
+-G_DECLARE_FINAL_TYPE (Pango2Context, pango2_context, PANGO2, CONTEXT, GObject);
++G_DECLARE_FINAL_TYPE (Pango2Context, pango2_context, PANGO2, CONTEXT, GObject)
+ 
+ PANGO2_AVAILABLE_IN_ALL
+ Pango2Context *          pango2_context_new                       (void);
+diff --git a/pango2/pango-layout.h b/pango2/pango-layout.h
+index f3ad61dd2..795052922 100644
+--- a/pango2/pango-layout.h
++++ b/pango2/pango-layout.h
+@@ -30,7 +30,7 @@ G_BEGIN_DECLS
+ #define PANGO2_TYPE_LAYOUT pango2_layout_get_type ()
+ 
+ PANGO2_AVAILABLE_IN_ALL
+-G_DECLARE_FINAL_TYPE (Pango2Layout, pango2_layout, PANGO2, LAYOUT, GObject);
++G_DECLARE_FINAL_TYPE (Pango2Layout, pango2_layout, PANGO2, LAYOUT, GObject)
+ 
+ PANGO2_AVAILABLE_IN_ALL
+ Pango2Layout *          pango2_layout_new            (Pango2Context                 *context);
+diff --git a/pango2/pango-line-breaker.h b/pango2/pango-line-breaker.h
+index 666f67f5c..859a9a14b 100644
+--- a/pango2/pango-line-breaker.h
++++ b/pango2/pango-line-breaker.h
+@@ -30,7 +30,7 @@ G_BEGIN_DECLS
+ #define PANGO2_TYPE_LINE_BREAKER pango2_line_breaker_get_type ()
+ 
+ PANGO2_AVAILABLE_IN_ALL
+-G_DECLARE_FINAL_TYPE (Pango2LineBreaker, pango2_line_breaker, PANGO2, LINE_BREAKER, GObject);
++G_DECLARE_FINAL_TYPE (Pango2LineBreaker, pango2_line_breaker, PANGO2, LINE_BREAKER, GObject)
+ 
+ PANGO2_AVAILABLE_IN_ALL
+ Pango2LineBreaker *     pango2_line_breaker_new          (Pango2Context          *context);
+diff --git a/pango2/pango-lines.h b/pango2/pango-lines.h
+index 497a40502..26cc2aaee 100644
+--- a/pango2/pango-lines.h
++++ b/pango2/pango-lines.h
+@@ -29,7 +29,7 @@ G_BEGIN_DECLS
+ #define PANGO2_TYPE_LINES pango2_lines_get_type ()
+ 
+ PANGO2_AVAILABLE_IN_ALL
+-G_DECLARE_FINAL_TYPE (Pango2Lines, pango2_lines, PANGO2, LINES, GObject);
++G_DECLARE_FINAL_TYPE (Pango2Lines, pango2_lines, PANGO2, LINES, GObject)
+ 
+ PANGO2_AVAILABLE_IN_ALL
+ Pango2Lines *           pango2_lines_new             (void);
+-- 
+GitLab
+

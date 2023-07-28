@@ -1,0 +1,11 @@
+[wrap-git]
+directory = pango2
+url = https://gitlab.gnome.org/GNOME/pango.git
+push-url = ssh://git@ssh.gitlab.gnome.org:GNOME/pagno.git
+revision = pango2
+
+diff_files = pango2-fix-harfbuzz.patch, pango2-avoid-pedantic.patch
+
+[provide]
+dependency_names = pango2
+pango2 = libpango_dep

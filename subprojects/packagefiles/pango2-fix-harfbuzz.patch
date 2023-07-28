@@ -1,0 +1,44 @@
+From bbbfda3dc540e407d85cde4d5edca45ccebadd53 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20=22sp1rit=22=E2=80=8B?= <sp1rit@disroot.org>
+Date: Mon, 13 Mar 2023 23:23:40 +0100
+Subject: [PATCH] Adopted the optical-margins example for harfbuzz >= 5.3.0
+
+Harfbuzz 5.3.0 (specifically 71c6cba) renamed its
+hb_ot_layout_get_optical_bound function to
+hb_ot_layout_lookup_get_optical_bound. This patch uses the
+HB_VERSION_ATLEAST macro defined by Harfbuzz to determine if the version
+that will be linked against is greater or equal to 5.3.0 and use the
+correct function invocation. This ensures that pango2 can be built with
+newer harfbuzz versions.
+
+Thanks-to: vanadiae <vanadiae35@gmail.com>
+---
+ examples/optical-margins.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/examples/optical-margins.c b/examples/optical-margins.c
+index 8d03488c6..12f416007 100644
+--- a/examples/optical-margins.c
++++ b/examples/optical-margins.c
+@@ -93,11 +93,18 @@ get_bound (Pango2Font     *font,
+   if (hb_set_is_empty (lookups))
+     res = get_fallback_bound (font, ch);
+   else
++#if HB_VERSION_ATLEAST(5,3,0)
++    res = hb_ot_layout_lookup_get_optical_bound (hb_font,
++                                          hb_set_get_min (lookups),
++                                          direction,
++                                          glyph);
++#else
+     res = hb_ot_layout_get_optical_bound (hb_font,
+                                           hb_set_get_min (lookups),
+                                           direction,
+                                           glyph);
+ 
++#endif
+   hb_set_destroy (lookups);
+ 
+   return res;
+-- 
+GitLab
+

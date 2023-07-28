@@ -1,0 +1,2 @@
+option('introspection', type: 'feature', value: 'auto')
+option('documentation', type: 'feature', value: 'auto')
