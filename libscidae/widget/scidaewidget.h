@@ -5,6 +5,7 @@
 #include <gsk/gsk.h>
 
 #include <scidaecontext.h>
+#include <scidaeutil.h>
 
 G_BEGIN_DECLS
 
@@ -118,7 +119,7 @@ struct _ScidaeWidgetClass {
 	void(*merge_markdown_end)(ScidaeWidget* self, const gchar* text);
 	
 	ScidaeMeasurementResult(*measure)(ScidaeWidget* self, gint width, gint start_x, gboolean force, gpointer* previous);
-	GskRenderNode*(*render)(ScidaeWidget* self, ScidaeMeasurementLine* measurement);
+	GskRenderNode*(*render)(ScidaeWidget* self, ScidaeMeasurementLine* measurement, const ScidaeRectangle* area);
 };
 
 /**
@@ -167,11 +168,13 @@ ScidaeMeasurementResult scidae_widget_measure(ScidaeWidget* self, gint width, gi
  * scidae_widget_render:
  * @self: The widget to render
  * @measurement: The measurement of the widget
+ * @area: (nullable): The area that will be rendered
  *
- * Get a render node from the respecitve widget.
+ * Get a render node from the respecitve widget. If area is %NULL, the
+ * entire area as specified in %measurement will be rendered.
  * Returns: (transfer full): A render node
  */
-GskRenderNode* scidae_widget_render(ScidaeWidget* self, ScidaeMeasurementLine* measurement);
+GskRenderNode* scidae_widget_render(ScidaeWidget* self, ScidaeMeasurementLine* measurement, const ScidaeRectangle* area);
 
 /**
  * scidae_widget_get_context: (attributes org.gtk.Method.get_property=context)

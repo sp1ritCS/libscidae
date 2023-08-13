@@ -65,7 +65,7 @@ static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* wi
 	return res;
 }
 
-static GskRenderNode* scidae_pango_text_widget_render(G_GNUC_UNUSED ScidaeWidget* widget, ScidaeMeasurementLine* w_measurement) {
+static GskRenderNode* scidae_pango_text_widget_render(G_GNUC_UNUSED ScidaeWidget* widget, ScidaeMeasurementLine* w_measurement, G_GNUC_UNUSED const ScidaeRectangle* area) {
 	g_return_val_if_fail(w_measurement->creator == SCIDAE_TYPE_PANGO_TEXT, NULL);
 	ScidaePangoTextMeasurementLine* measurement = (ScidaePangoTextMeasurementLine*)w_measurement;
 	

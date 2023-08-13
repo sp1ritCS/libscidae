@@ -3,6 +3,8 @@
 #include "scidaewidget-alt.h"
 #include "scidaetoplevel.h"
 
+#include "scidaeutil-private.h"
+
 typedef struct {
 	ScidaeMeasurementLine* line;
 	gint xpos;
@@ -288,7 +290,7 @@ static GskRenderNode* scidae_paragraph_translate_render_node_by(GskRenderNode* n
 	return translated;
 }
 
-static GskRenderNode* scidae_paragraph_widget_render(G_GNUC_UNUSED ScidaeWidget* widget, ScidaeMeasurementLine* w_measurement) {
+static GskRenderNode* scidae_paragraph_widget_render(G_GNUC_UNUSED ScidaeWidget* widget, ScidaeMeasurementLine* w_measurement, const ScidaeRectangle* area) {
 	g_return_val_if_fail(w_measurement->creator == SCIDAE_TYPE_PARAGRAPH, NULL);
 	ScidaeParagraphMeasurementLine* measurement = (ScidaeParagraphMeasurementLine*)w_measurement;
 	
@@ -297,7 +299,19 @@ static GskRenderNode* scidae_paragraph_widget_render(G_GNUC_UNUSED ScidaeWidget*
 		ScidaeParagraphInternalMeasurementLineWrapper wrapper = g_array_index(measurement->measurements, ScidaeParagraphInternalMeasurementLineWrapper, i);
 		for (guint j = 0; j < wrapper.measurements->len; j++) {
 			ScidaeParagraphMeasurementWrapper m_wrapper = g_array_index(wrapper.measurements, ScidaeParagraphMeasurementWrapper, j);
-			GskRenderNode* render = scidae_widget_render(m_wrapper.node->data, m_wrapper.line);
+
+			if (!scidae_rectangle_intersects(area,
+				&SCIDAE_RECTANGLE_INIT(
+					m_wrapper.xpos,
+					wrapper.ypos + m_wrapper.yoffset,
+					m_wrapper.line->width,
+					m_wrapper.line->height
+				)
+			))
+				continue;
+
+			ScidaeRectangle translated_area = scidae_rectangle_translate_copy(area, m_wrapper.xpos, wrapper.ypos + m_wrapper.yoffset);
+			GskRenderNode* render = scidae_widget_render(m_wrapper.node->data, m_wrapper.line, &translated_area);
 			GskRenderNode* translated = scidae_paragraph_translate_render_node_by(
 				render,
 				scidae_context_get_from_units(scidae_widget_get_context(widget)),

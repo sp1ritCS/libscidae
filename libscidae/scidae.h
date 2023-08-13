@@ -3,6 +3,7 @@
 
 #include <scidaecontext.h>
 #include <scidaecanvas.h>
+#include <scidaeutil.h>
 
 #include <widget/scidaewidget.h>
 #include <widget/scidaecontainer.h>

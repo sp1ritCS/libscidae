@@ -165,9 +165,13 @@ ScidaeMeasurementResult scidae_widget_measure(ScidaeWidget* self, gint width, gi
 	return widget_class->measure(self, width, start_x, force, previous);
 }
 
-GskRenderNode* scidae_widget_render(ScidaeWidget* self, ScidaeMeasurementLine* measurement) {
+GskRenderNode* scidae_widget_render(ScidaeWidget* self, ScidaeMeasurementLine* measurement, const ScidaeRectangle* area) {
 	g_return_val_if_fail(SCIDAE_IS_WIDGET(self), NULL);
 	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
 	g_return_val_if_fail(widget_class->render, NULL);
-	return widget_class->render(self, measurement);
+	return widget_class->render(
+		self,
+		measurement,
+		area == NULL ? &SCIDAE_RECTANGLE_INIT(0, 0, measurement->width, measurement->height) : area
+	);
 }

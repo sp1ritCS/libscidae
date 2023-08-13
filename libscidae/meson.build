@@ -1,6 +1,7 @@
 scidae_src = [
 	'scidaecontext.c',
 	'scidaecanvas.c',
+	'scidaeutil.c',
 	[
 		'widget/scidaewidget.c',
 		'widget/scidaecontainer.c',
@@ -20,6 +21,7 @@ sciade_headers = [
 	'scidae.h',
 	'scidaecontext.h',
 	'scidaecanvas.h',
+	'scidaeutil.h',
 	[
 		'widget/scidaewidget.h',
 		'widget/scidaewidget-alt.h',
