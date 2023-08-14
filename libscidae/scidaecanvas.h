@@ -27,7 +27,7 @@ G_DECLARE_FINAL_TYPE (ScidaeCanvas, scidae_canvas, SCIDAE, CANVAS, GtkWidget)
 GtkWidget* scidae_canvas_new(ScidaeToplevel* child);
 
 /**
- * scidae_canvas_get_child:
+ * scidae_canvas_get_child: (attributes org.gtk.Method.get_property=child)
  * @self: the canvas
  *
  * Get the widget that the canvas is currently drawing.
@@ -36,13 +36,31 @@ GtkWidget* scidae_canvas_new(ScidaeToplevel* child);
 ScidaeToplevel* scidae_canvas_get_child(ScidaeCanvas* self);
 
 /**
- * scidae_canvas_set_child:
+ * scidae_canvas_set_child: (attributes org.gtk.Method.set_property=child)
  * @self: the canvas
  * @child: a new widget
  *
  * Change the widget that the canvas renderes.
  */
 void scidae_canvas_set_child(ScidaeCanvas* self, ScidaeToplevel* child);
+
+/**
+ * scidae_canvas_get_zoom: (attributes org.gtk.Method.get_property=zoom)
+ * @self: the canvas
+ *
+ * Get the current zoom level in display units.
+ * Returns: the current zoom level
+ */
+gdouble scidae_canvas_get_zoom(ScidaeCanvas* self);
+
+/**
+ * scidae_canvas_set_zoom: (attributes org.gtk.Method.set_property=zoom)
+ * @self: the canvas
+ * @zoom: the new zoom level in display units
+ *
+ * Update the current zoom level.
+ */
+void scidae_canvas_set_zoom(ScidaeCanvas* self, gdouble zoom);
 
 G_END_DECLS
 
