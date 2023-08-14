@@ -90,7 +90,7 @@ static void scidae_widget_class_init(ScidaeWidgetClass* class) {
 		"Parent",
 		"The parent container that holds this widget",
 		SCIDAE_TYPE_CONTAINER,
-		G_PARAM_STATIC_STRINGS | G_PARAM_READWRITE | G_PARAM_EXPLICIT_NOTIFY
+		G_PARAM_STATIC_STRINGS | G_PARAM_READWRITE | G_PARAM_CONSTRUCT | G_PARAM_EXPLICIT_NOTIFY
 	);
 	g_object_class_install_properties(object_class, N_PROPERTIES, obj_properties);
 }
@@ -127,7 +127,7 @@ ScidaeContainer* scidae_widget_get_parent(ScidaeWidget* self) {
 
 void scidae_widget_set_parent(ScidaeWidget* self, ScidaeContainer* parent) {
 	g_return_if_fail(SCIDAE_IS_WIDGET(self));
-	g_return_if_fail(SCIDAE_IS_CONTAINER(parent));
+	g_return_if_fail(parent == NULL || SCIDAE_IS_CONTAINER(parent));
 	ScidaeWidgetPrivate* priv = scidae_widget_get_instance_private(self);
 	
 	if (priv->parent)

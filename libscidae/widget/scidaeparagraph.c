@@ -370,9 +370,17 @@ static GList* scidae_paragraph_container_get_children(ScidaeContainer* container
 	return g_list_copy(self->nodes);
 }
 
+static inline void scidae_paragraph_request_redraw(ScidaeParagraph* self) {
+	ScidaeContainer* parent = scidae_widget_get_parent(SCIDAE_WIDGET(self));
+	if (!parent)
+		return;
+	scidae_container_mark_child_remeasure(parent, SCIDAE_WIDGET(self));
+}
+
 void scidae_paragraph_container_mark_child_remeasure(ScidaeContainer* container, ScidaeWidget* child) {
 	ScidaeParagraph* self = SCIDAE_PARAGRAPH(container);
 	g_hash_table_add(self->remeasure_requests, child);
+	scidae_paragraph_request_redraw(self);
 }
 
 static void scidae_paragraph_container_iface_init(ScidaeContainerInterface* iface) {
@@ -403,6 +411,7 @@ void scidae_paragraph_set_line_spacing(ScidaeParagraph* self, gint spacing) {
 	self->line_spacing = spacing;
 
 	self->force_remeasure = TRUE;
+	scidae_paragraph_request_redraw(self);
 	
 	g_object_notify_by_pspec(G_OBJECT(self), obj_properties[PROP_LINE_SPACING]);
 }

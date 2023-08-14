@@ -76,6 +76,24 @@ gdouble scidae_context_from_units(ScidaeContext* self, gint units);
  */
 gint scidae_context_to_units(ScidaeContext* self, gdouble display);
 
+/**
+ * scidae_context_get_base_font_size: (attributes org.gtk.Method.get_property=base-font-size)
+ * @self: the context
+ *
+ * Get the current base font size.
+ * Returns: the base font size
+ */
+guint scidae_context_get_base_font_size(ScidaeContext* self);
+
+/**
+ * scidae_context_set_base_font_size: (attributes org.gtk.Method.get_property=base-font-size)
+ * @self: the context
+ * @base_font_size: the new fontsize
+ *
+ * Change the base fontsize of all widgets in the context.
+ */
+void scidae_context_set_base_font_size(ScidaeContext* self, guint base_font_size);
+
 G_END_DECLS
 
 #endif // __SCIDAECONTEXT_H__

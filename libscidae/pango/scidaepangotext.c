@@ -25,14 +25,17 @@ static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* wi
 	
 	Pango2LineBreaker* breaker = *previous;
 	if (!breaker) {
-		breaker = pango2_line_breaker_new(scidae_pango_context_get_context(SCIDAE_PANGO_CONTEXT(scidae_widget_get_context(widget))));
+		ScidaeContext* context = scidae_widget_get_context(widget);
+		breaker = pango2_line_breaker_new(scidae_pango_context_get_context(SCIDAE_PANGO_CONTEXT(context)));
 		*previous = breaker;
 		
 		const gchar* body = scidae_text_get_body(SCIDAE_TEXT(self));
 		
 		g_autoptr(Pango2AttrList) attrs = pango2_attr_list_new();
+		guint base_font_size = scidae_context_get_base_font_size(context);
+		pango2_attr_list_change(attrs, pango2_attr_size_new(base_font_size));
 		if (g_strcmp0(body, "Hello") == 0)
-			pango2_attr_list_change(attrs, pango2_attr_size_new(18*PANGO2_SCALE));
+			pango2_attr_list_change(attrs, pango2_attr_size_new(base_font_size*1.5));
 		pango2_line_breaker_add_text(breaker, body, -1, attrs);
 	}
 

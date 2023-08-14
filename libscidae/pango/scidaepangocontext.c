@@ -87,6 +87,8 @@ static void scidae_pango_context_class_init(ScidaePangoContextClass* class) {
 
 static void scidae_pango_context_init(ScidaePangoContext* self) {
 	self->context = NULL;
+
+	scidae_context_set_base_font_size(SCIDAE_CONTEXT(self), pango2_units_from_double(12.0));
 }
 
 ScidaeContext* scidae_pango_context_new(Pango2Context* context) {

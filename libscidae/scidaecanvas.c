@@ -4,7 +4,7 @@
 
 struct _ScidaeCanvas {
 	GtkWidget parent_instance;
-	
+
 	ScidaeToplevel* child;
 	ScidaeMeasurementLine* latest;
 
@@ -272,6 +272,10 @@ ScidaeToplevel* scidae_canvas_get_child(ScidaeCanvas* self) {
 	return self->child;
 }
 
+static void scidae_canvas_context_fontsize_changed(ScidaeContext*, GParamSpec*, ScidaeCanvas* self) {
+	scidae_canvas_queue_remeasure(self);
+}
+
 void scidae_canvas_set_child(ScidaeCanvas* self, ScidaeToplevel* child) {
 	g_return_if_fail(SCIDAE_IS_CANVAS(self));
 	g_return_if_fail(SCIDAE_IS_TOPLEVEL(child));
@@ -279,9 +283,12 @@ void scidae_canvas_set_child(ScidaeCanvas* self, ScidaeToplevel* child) {
 	if (self->child == child)
 		return;
 
-	if (self->child)
+	if (self->child) {
+		g_signal_handlers_disconnect_by_func(scidae_widget_get_context(SCIDAE_WIDGET(self->child)), scidae_canvas_context_fontsize_changed, self);
 		g_object_unref(self->child);
+	}
 	self->child = g_object_ref(child);
+	g_signal_connect(scidae_widget_get_context(SCIDAE_WIDGET(self->child)), "notify::base-font-size", G_CALLBACK(scidae_canvas_context_fontsize_changed), self);
 
 	scidae_canvas_queue_remeasure(self);
 
