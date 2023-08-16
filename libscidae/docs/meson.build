@@ -13,6 +13,25 @@ if docgen.found()
 		configuration: documentation_conf
 	)
 
+	custom_target('data-documentation',
+		input: [scidae_documentation_toml, scidae_data_gir_t[0]],
+		output: 'libscidae-data-@0@'.format(scidae_sover),
+		command: [
+			docgen,
+			'generate',
+			'--quiet',
+			'--config=@INPUT0@',
+			'--output-dir=@OUTPUT@',
+			'--no-namespace-dir',
+			'--content-dir=@0@'.format(meson.current_source_dir()),
+			'@INPUT1@',
+		],
+		depend_files: [ 'scidae_urlmap.js' ],
+		build_by_default: true,
+		install: true,
+		install_dir: get_option('datadir') / 'doc',
+	)
+
 	custom_target('documentation',
 		input: [scidae_documentation_toml, scidae_gir_t[0]],
 		output: 'libscidae-@0@'.format(scidae_sover),
@@ -25,6 +44,7 @@ if docgen.found()
 			'--no-namespace-dir',
 			'--content-dir=@0@'.format(meson.current_source_dir()),
 			'--add-include-path=subprojects/pango2/pango2/',
+			'--add-include-path=libscidae/data/',
 			'@INPUT1@',
 		],
 		depend_files: [ 'scidae_urlmap.js' ],

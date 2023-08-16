@@ -1,3 +1,9 @@
+pkgconf = import('pkgconfig')
+gir_scanner = find_program('g-ir-scanner', required: get_option('introspection'))
+do_introspection = gir_scanner.found() and (not meson.is_cross_build() or get_option('introspection').enabled())
+
+subdir('data')
+
 scidae_src = [
 	'scidaecontext.c',
 	'scidaecanvas.c',
@@ -44,7 +50,8 @@ scidae_public_deps = [
 	dependency('gobject-2.0'),
 	dependency('gio-2.0'),
 	dependency('gtk4'),
-	pango2.get_variable('libpango_dep')
+	pango2.get_variable('libpango_dep'),
+	scidae_data_dep
 ]
 
 scidae_lib = library('scidae', scidae_src,
@@ -66,7 +73,7 @@ scidae_dep = declare_dependency(
 
 install_headers(sciade_headers, subdir: 'libscidae')
 
-import('pkgconfig').generate(
+pkgconf.generate(
 	name: meson.project_name(),
 	filebase: 'libscidae',
 	description : 'Meson sample project.',
@@ -75,19 +82,18 @@ import('pkgconfig').generate(
 	version: meson.project_version()
 )
 
-gir_scanner = find_program('g-ir-scanner', required: get_option('introspection'))
-do_introspection = gir_scanner.found() and (not meson.is_cross_build() or get_option('introspection').enabled())
 if do_introspection
 	scidae_gir_t = gnome.generate_gir(scidae_lib,
 		dependencies: scidae_public_deps,
 		sources: [scidae_src, sciade_headers],
 		namespace: 'Scidae',
 		nsversion: '@0@'.format(scidae_sover),
-		includes: ['GLib-2.0', 'GObject-2.0', 'Gio-2.0', 'Gtk-4.0', 'Pango2-1.0'],
+		includes: ['GLib-2.0', 'GObject-2.0', 'Gio-2.0', 'Gtk-4.0', 'Pango2-1.0', scidae_data_gir_t[0]],
 		include_directories: [pango2.get_variable('pango_inc')],
 		header: 'scidae.h',
 		install: true,
 		symbol_prefix: 'scidae'
 	)
 endif
+
 subdir('docs')
