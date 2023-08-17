@@ -1,6 +1,7 @@
 #ifndef __SCIDAEDATA_H__
 #define __SCIDAEDATA_H__
 
+#include <scidaedataid.h>
 #include <scidaewordnode.h>
 #include <scidaerevision.h>
 #include <scidaerevisioninsert.h>

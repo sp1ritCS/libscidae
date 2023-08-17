@@ -2,6 +2,7 @@
 #define __SCIDAEREVISION_H__
 
 #include <glib-object.h>
+#include <scidaedataid.h>
 
 G_BEGIN_DECLS
 
@@ -13,6 +14,10 @@ struct _ScidaeRevisionClass {
 
 	gboolean(*apply)(ScidaeRevision* self, GString* target, GError** err);
 };
+
+ScidaeDataId* scidae_revision_get_identifier(ScidaeRevision* self);
+
+void scidae_revision_set_identifier(ScidaeRevision* self, ScidaeDataId* identifier);
 
 gboolean scidae_revision_apply(ScidaeRevision* self, GString* target, GError** err);
 

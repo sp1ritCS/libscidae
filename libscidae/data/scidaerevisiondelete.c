@@ -87,8 +87,8 @@ static void scidae_revision_delete_init(ScidaeRevisionDelete* self) {
 	self->len = 0;
 }
 
-ScidaeRevision* scidae_revision_delete_new(gsize start, gsize length) {
-	return g_object_new(SCIDAE_TYPE_REVISION_DELETE, "start", start, "length", length, NULL);
+ScidaeRevision* scidae_revision_delete_new(ScidaeDataId* identifier, gsize start, gsize length) {
+	return g_object_new(SCIDAE_TYPE_REVISION_DELETE, "identifier", identifier, "start", start, "length", length, NULL);
 }
 
 gsize scidae_revision_delete_get_start(ScidaeRevisionDelete* self) {

@@ -29,7 +29,29 @@ static void activate(GtkApplication* app, gpointer) {
 	gtk_window_present(GTK_WINDOW(window));
 }
 
+#include <scidaedata.h>
+static void test_data(void) {
+	g_autoptr(GPtrArray) revisions_first = g_ptr_array_new();
+	g_ptr_array_add(revisions_first, scidae_revision_insert_new(NULL, "Hello ", 0));
+	g_autoptr(ScidaeWordNode) first = scidae_word_node_new(revisions_first);
+
+	g_autoptr(GPtrArray) revisions_second = g_ptr_array_new();
+	g_ptr_array_add(revisions_second, scidae_revision_insert_new(NULL, "World!", 0));
+	g_ptr_array_add(revisions_second, scidae_revision_delete_new(NULL, 0, 5));
+	g_ptr_array_add(revisions_second, scidae_revision_insert_new(NULL, "Scidae", 0));
+	g_autoptr(ScidaeWordNode) second = scidae_word_node_new(revisions_second);
+
+	scidae_word_node_set_next(first, second);
+	scidae_word_node_set_prev(second, first);
+
+	gchar* o = g_strconcat(scidae_word_node_get_string(first), scidae_word_node_get_string(second), NULL);
+	g_print("Buf: %s\n", o);
+	g_free(o);
+}
+
 int main(int argc, char** argv) {
+	test_data();
+
 	g_autoptr(GtkApplication) app = gtk_application_new("arpa.sp1rit.scidae.demov2", G_APPLICATION_DEFAULT_FLAGS);
 	g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
 	return g_application_run(G_APPLICATION(app), argc, argv);

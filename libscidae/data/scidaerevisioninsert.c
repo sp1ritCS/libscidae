@@ -93,8 +93,8 @@ static void scidae_revision_insert_init(ScidaeRevisionInsert* self) {
 	self->pos = -1;
 }
 
-ScidaeRevision* scidae_revision_insert_new(const gchar* content, gsize pos) {
-	return g_object_new(SCIDAE_TYPE_REVISION_INSERT, "content", content, "position", pos, NULL);
+ScidaeRevision* scidae_revision_insert_new(ScidaeDataId* identifier, const gchar* content, gsize pos) {
+	return g_object_new(SCIDAE_TYPE_REVISION_INSERT, "identifier", identifier, "content", content, "position", pos, NULL);
 }
 
 const gchar* scidae_revision_insert_get_content(ScidaeRevisionInsert* self) {

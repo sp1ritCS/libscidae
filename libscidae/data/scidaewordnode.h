@@ -46,6 +46,44 @@ const gchar* scidae_word_node_get_string(ScidaeWordNode* self);
 const GPtrArray* scidae_word_node_get_revisions(ScidaeWordNode* self);
 
 /**
+ * scidae_word_node_get_prev:
+ * @self: the word node
+ *
+ * Get the node in front of this word node.
+ * Returns: (transfer none): the previous node
+ */
+ScidaeWordNode* scidae_word_node_get_prev(ScidaeWordNode* self);
+
+/**
+ * scidae_word_node_set_prev:
+ * @self: the word node
+ * @new_prev: (transfer full): the new previous node
+ *
+ * Replace the previous word node with a new one.
+ * Returns: (transfer full): the old previous node
+ */
+ScidaeWordNode* scidae_word_node_set_prev(ScidaeWordNode* self, ScidaeWordNode* new_prev);
+
+/**
+ * scidae_word_node_get_next:
+ * @self: the word node
+ *
+ * Get the node after of this word node.
+ * Returns: (transfer none): the next node
+ */
+ScidaeWordNode* scidae_word_node_get_next(ScidaeWordNode* self);
+
+/**
+ * scidae_word_node_set_next:
+ * @self: the word node
+ * @new_next: (transfer full): the new next node
+ *
+ * Replace the next word node with a new one.
+ * Returns: (transfer full): the old next node
+ */
+ScidaeWordNode* scidae_word_node_set_next(ScidaeWordNode* self, ScidaeWordNode* new_next);
+
+/**
  * scidae_word_node_apply_revision:
  * @self: the word node
  * @rev: the revision to apply

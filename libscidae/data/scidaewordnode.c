@@ -39,9 +39,9 @@ static void scidae_word_node_set_revisions(ScidaeWordNode* self, GPtrArray* revi
 	g_string_set_size(self->current, 0);
 	GError* err = NULL;
 	for (guint i = 0; i < self->revisions->len; i++) {
-		scidae_word_node_apply_revision(self, g_ptr_array_index(self->revisions, i), &err);
-		if (err) {
-			g_critical("Failed to apply revision %p: %s", g_ptr_array_index(self->revisions, i), err->message);
+		ScidaeRevision* rev = g_ptr_array_index(self->revisions, i);
+		if (!scidae_revision_apply(rev, self->current, &err)) {
+			g_critical("Failed to apply revision %p: %s", (void*)rev, err->message);
 			g_error_free(err);
 			err = NULL;
 		}
@@ -109,6 +109,32 @@ const gchar* scidae_word_node_get_string(ScidaeWordNode* self) {
 const GPtrArray* scidae_word_node_get_revisions(ScidaeWordNode* self) {
 	g_return_val_if_fail(SCIDAE_IS_WORD_NODE(self), NULL);
 	return self->revisions;
+}
+
+ScidaeWordNode* scidae_word_node_get_prev(ScidaeWordNode* self) {
+	g_return_val_if_fail(SCIDAE_IS_WORD_NODE(self), NULL);
+	return self->prev;
+}
+
+ScidaeWordNode* scidae_word_node_set_prev(ScidaeWordNode* self, ScidaeWordNode* new) {
+	g_return_val_if_fail(SCIDAE_IS_WORD_NODE(self), NULL);
+
+	ScidaeWordNode* old = self->prev;
+	self->prev = new;
+	return old;
+}
+
+ScidaeWordNode* scidae_word_node_get_next(ScidaeWordNode* self) {
+	g_return_val_if_fail(SCIDAE_IS_WORD_NODE(self), NULL);
+	return self->prev;
+}
+
+ScidaeWordNode* scidae_word_node_set_next(ScidaeWordNode* self, ScidaeWordNode* new) {
+	g_return_val_if_fail(SCIDAE_IS_WORD_NODE(self), NULL);
+
+	ScidaeWordNode* old = self->next;
+	self->next = new;
+	return old;
 }
 
 void scidae_word_node_apply_revision(ScidaeWordNode* self, ScidaeRevision* rev, GError** err) {

@@ -1,4 +1,5 @@
 scidae_data_src = [
+	'scidaedataid.c',
 	'scidaewordnode.c',
 	'scidaerevision.c',
 	'scidaerevisioninsert.c',
@@ -7,10 +8,11 @@ scidae_data_src = [
 
 scidae_data_headers = [
 	'scidaedata.h',
+	'scidaedataid.h',
 	'scidaewordnode.h',
 	'scidaerevision.h',
-	'scidaerevisioninsert.c',
-	'scidaerevisiondelete.c'
+	'scidaerevisioninsert.h',
+	'scidaerevisiondelete.h'
 ]
 
 scidae_data_inc_dirs = [ include_directories('.') ]
