@@ -2,6 +2,7 @@
 #define __SCIDAEWORDNODE_H__
 
 #include <glib-object.h>
+#include <scidaedataid.h>
 #include <scidaerevision.h>
 
 G_BEGIN_DECLS
@@ -35,6 +36,24 @@ ScidaeWordNode* scidae_word_node_new(GPtrArray* revisions);
  * Returns: (transfer none): the current string
  */
 const gchar* scidae_word_node_get_string(ScidaeWordNode* self);
+
+/**
+ * scidae_word_node_get_identifier:
+ * @self: the word node
+ *
+ * Get the unique identifier for this word node.
+ * Returns: (transfer none): the unique identifier
+ */
+ScidaeDataId* scidae_word_node_get_identifier(ScidaeWordNode* self);
+
+/**
+ * scidae_word_node_set_identifier:
+ * @self: the word node
+ * @identifier: the new identifier
+ *
+ * Set a new unique identifier for this word node.
+ */
+void scidae_word_node_set_identifier(ScidaeWordNode* self, ScidaeDataId* identifier);
 
 /**
  * scidae_word_node_get_revisions:
