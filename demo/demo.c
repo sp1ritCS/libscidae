@@ -47,6 +47,18 @@ static void test_data(void) {
 	gchar* o = g_strconcat(scidae_word_node_get_string(first), scidae_word_node_get_string(second), NULL);
 	g_print("Buf: %s\n", o);
 	g_free(o);
+
+	g_autoptr(GByteArray) a = g_byte_array_new();
+	for (ScidaeWordNode* i = first; i != NULL; i = scidae_word_node_get_next(i)) {
+		g_autoptr(GBytes) b = scidae_word_node_serialize(i);
+		gsize len;
+		const guchar* bytes = g_bytes_get_data(b, &len);
+		g_byte_array_append(a, bytes, len);
+	}
+
+	gchar* x = g_base64_encode(a->data, a->len);
+	g_print("Ser: %s\n", x);
+	g_free(x);
 }
 
 int main(int argc, char** argv) {

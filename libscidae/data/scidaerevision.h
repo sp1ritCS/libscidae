@@ -12,12 +12,19 @@ G_DECLARE_DERIVABLE_TYPE (ScidaeRevision, scidae_revision, SCIDAE, REVISION, GOb
 struct _ScidaeRevisionClass {
 	GObjectClass parent_class;
 
+	const gchar*(*get_namespace)(ScidaeRevision* self);
+	void(*serialize_inner)(ScidaeRevision* self, GByteArray* inner);
+
 	gboolean(*apply)(ScidaeRevision* self, GString* target, GError** err);
 };
 
 ScidaeDataId* scidae_revision_get_identifier(ScidaeRevision* self);
 
 void scidae_revision_set_identifier(ScidaeRevision* self, ScidaeDataId* identifier);
+
+const gchar* scidae_revision_get_namespace(ScidaeRevision* self);
+
+GBytes* scidae_revision_serialize(ScidaeRevision* self);
 
 gboolean scidae_revision_apply(ScidaeRevision* self, GString* target, GError** err);
 

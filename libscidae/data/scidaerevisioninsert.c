@@ -51,6 +51,22 @@ static void scidae_revision_insert_object_set_property(GObject* object, guint pr
 	}
 }
 
+const gchar* scidae_revision_insert_revision_get_namespace(G_GNUC_UNUSED ScidaeRevision* self) {
+	return NULL; // Scidae.RevisionInsert is part of core
+}
+
+static const guchar scidae_revision_insert_serialization_id = 1;
+void scidae_revision_insert_revision_serialize_inner(ScidaeRevision* revision, GByteArray* inner) {
+	ScidaeRevisionInsert* self = SCIDAE_REVISION_INSERT(revision);
+
+	g_byte_array_append(inner, &scidae_revision_insert_serialization_id, 1);
+
+	g_byte_array_append(inner, (guchar*)self->str, strlen(self->str) + 1);
+
+	guint64 pos = self->pos;
+	g_byte_array_append(inner, (guchar*)&pos, sizeof(pos));
+}
+
 static gboolean scidae_revision_insert_revision_apply(ScidaeRevision* revision, GString* target, G_GNUC_UNUSED GError** err) {
 	ScidaeRevisionInsert* self = SCIDAE_REVISION_INSERT(revision);
 	g_string_insert(target, self->pos, self->str);
@@ -65,6 +81,8 @@ static void scidae_revision_insert_class_init(ScidaeRevisionInsertClass* class) 
 	object_class->get_property = scidae_revision_insert_object_get_property;
 	object_class->set_property = scidae_revision_insert_object_set_property;
 
+	revision_class->get_namespace = scidae_revision_insert_revision_get_namespace;
+	revision_class->serialize_inner = scidae_revision_insert_revision_serialize_inner;
 	revision_class->apply = scidae_revision_insert_revision_apply;
 
 	obj_properties[PROP_CONTENT] = g_param_spec_string(

@@ -44,6 +44,23 @@ static void scidae_revision_delete_object_set_property(GObject* object, guint pr
 	}
 }
 
+const gchar* scidae_revision_delete_revision_get_namespace(G_GNUC_UNUSED ScidaeRevision* self) {
+	return NULL; // Scidae.RevisionDelete is part of core
+}
+
+static const guchar scidae_revision_delete_serialization_id = 2;
+void scidae_revision_delete_revision_serialize_inner(ScidaeRevision* revision, GByteArray* inner) {
+	ScidaeRevisionDelete* self = SCIDAE_REVISION_DELETE(revision);
+
+	g_byte_array_append(inner, &scidae_revision_delete_serialization_id, 1);
+
+	guint64 start = self->start;
+	g_byte_array_append(inner, (guchar*)&start, sizeof(start));
+
+	guint64 len = self->len;
+	g_byte_array_append(inner, (guchar*)&len, sizeof(len));
+}
+
 static gboolean scidae_revision_delete_revision_apply(ScidaeRevision* revision, GString* target, G_GNUC_UNUSED GError** err) {
 	ScidaeRevisionDelete* self = SCIDAE_REVISION_DELETE(revision);
 	g_string_erase(target, self->start, self->len);
@@ -57,6 +74,8 @@ static void scidae_revision_delete_class_init(ScidaeRevisionDeleteClass* class) 
 	object_class->get_property = scidae_revision_delete_object_get_property;
 	object_class->set_property = scidae_revision_delete_object_set_property;
 
+	revision_class->get_namespace = scidae_revision_delete_revision_get_namespace;
+	revision_class->serialize_inner = scidae_revision_delete_revision_serialize_inner;
 	revision_class->apply = scidae_revision_delete_revision_apply;
 
 	obj_properties[PROP_START] = g_param_spec_uint64(

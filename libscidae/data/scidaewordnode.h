@@ -112,6 +112,15 @@ ScidaeWordNode* scidae_word_node_set_next(ScidaeWordNode* self, ScidaeWordNode* 
  */
 void scidae_word_node_apply_revision(ScidaeWordNode* self, ScidaeRevision* rev, GError** err);
 
+/**
+ * scidae_word_node_serialize:
+ * @self: the word node
+ *
+ * Serialize the word node and its revisions.
+ * Returns: (transfer full): serialized data
+ */
+GBytes* scidae_word_node_serialize(ScidaeWordNode* self);
+
 G_END_DECLS
 
 #endif // __SCIDAEWORDNODE_H__

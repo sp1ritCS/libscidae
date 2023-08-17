@@ -178,7 +178,7 @@ ScidaeWordNode* scidae_word_node_set_prev(ScidaeWordNode* self, ScidaeWordNode* 
 
 ScidaeWordNode* scidae_word_node_get_next(ScidaeWordNode* self) {
 	g_return_val_if_fail(SCIDAE_IS_WORD_NODE(self), NULL);
-	return self->prev;
+	return self->next;
 }
 
 ScidaeWordNode* scidae_word_node_set_next(ScidaeWordNode* self, ScidaeWordNode* new) {
@@ -196,4 +196,30 @@ void scidae_word_node_apply_revision(ScidaeWordNode* self, ScidaeRevision* rev, 
 		return;
 
 	g_ptr_array_add(self->revisions, rev);
+}
+
+static guchar scodae_word_node_serialize_node = 1;
+GBytes* scidae_word_node_serialize(ScidaeWordNode* self) {
+	GByteArray* ret = g_byte_array_new();
+
+	{
+		g_autoptr(GByteArray) inner = g_byte_array_new();
+		g_byte_array_append(inner, &scodae_word_node_serialize_node, 1);
+		g_byte_array_append(inner, (const guchar*)self->identifier, sizeof(ScidaeDataId));
+
+		guint32 len = inner->len;
+		g_byte_array_append(ret, (guchar*)&len, sizeof(len));
+		g_byte_array_append(ret, inner->data, len);
+	}
+
+	for (guint i = 0; i < self->revisions->len; i++) {
+		ScidaeRevision* rev = g_ptr_array_index(self->revisions, i);
+		g_autoptr(GBytes) ser = scidae_revision_serialize(rev);
+
+		gsize len;
+		const guchar* data = g_bytes_get_data(ser, &len);
+		g_byte_array_append(ret, data, len);
+	}
+
+	return g_byte_array_free_to_bytes(ret);
 }
