@@ -1,0 +1,10 @@
+[wrap-git]
+directory = libgrapheme
+url = git://git.suckless.org/libgrapheme
+revision = master
+
+diff_files = libgrapheme-meson-support.patch
+
+[provide]
+dependency_names = libgrapheme
+libgrapheme = grapheme_dep

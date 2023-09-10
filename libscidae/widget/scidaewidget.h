@@ -9,6 +9,11 @@
 
 G_BEGIN_DECLS
 
+typedef enum {
+	SCIDAE_MEASUREMENT_HAS_CURSOR = 1 << 0,
+	SCIDAE_MEASUREMENT_HAS_SELECTION = 1 << 1,
+} ScidaeMeasurementProps;
+
 #define SCIDAE_TYPE_MEASUREMENT_LINE (scidae_measurement_line_get_type())
 /**
  * ScidaeMeasurementLine:
@@ -26,6 +31,8 @@ struct _ScidaeMeasurementLine {
 	gint width;
 	gint height;
 	gint baseline;
+
+	ScidaeMeasurementProps props;
 };
 typedef struct _ScidaeMeasurementLine ScidaeMeasurementLine;
 
@@ -44,6 +51,7 @@ GType scidae_measurement_line_get_type(void);
 static inline ScidaeMeasurementLine* scidae_measurement_line_alloc(gsize size, GType creator, GDestroyNotify del_fun) {
 	ScidaeMeasurementLine* line = g_malloc(size);
 	line->creator = creator;
+	line->props = 0;
 	g_atomic_ref_count_init(&line->ref);
 	line->del_fun = del_fun;
 	return line;
@@ -111,6 +119,21 @@ static const ScidaeMeasurementResult scidae_measurement_result_skip = {
 #define SCIDAE_TYPE_WIDGET (scidae_widget_get_type())
 G_DECLARE_DERIVABLE_TYPE (ScidaeWidget, scidae_widget, SCIDAE, WIDGET, GInitiallyUnowned)
 
+typedef enum {
+	SCIDAE_WIDGET_MEASUREMENT_NO_ATTRS = 0,
+	SCIDAE_WIDGET_MEASUREMENT_CONTINUES_SELECTION = 1 << 0,
+} ScidaeWidgetMeasurementAttrs;
+
+typedef enum {
+	SCIDAE_MOVEMENT_MODIFIER_CONTROL = 1 << 0,
+	SCIDAE_MOVEMENT_MODIFIER_ALT = 1 << 1
+} ScidaeWidgetMovementModifier;
+
+typedef enum {
+	SCIDAE_CURSOR_TYPE_PRIMARY,
+	SCIDAE_CURSOR_TYPE_SECONDARY
+} ScidaeWidgetCursorType;
+
 struct _ScidaeWidgetClass {
 	GInitiallyUnownedClass parent_class;
 	
@@ -118,8 +141,21 @@ struct _ScidaeWidgetClass {
 	void(*merge_markdown_start)(ScidaeWidget* self, const gchar* text);
 	void(*merge_markdown_end)(ScidaeWidget* self, const gchar* text);
 	
-	ScidaeMeasurementResult(*measure)(ScidaeWidget* self, gint width, gint start_x, gboolean force, gpointer* previous);
+	ScidaeMeasurementResult(*measure)(ScidaeWidget* self, gint width, gint start_x, gboolean force, ScidaeWidgetMeasurementAttrs attrs, gpointer* previous);
 	GskRenderNode*(*render)(ScidaeWidget* self, ScidaeMeasurementLine* measurement, const ScidaeRectangle* area);
+
+	/* BEGIN EDITING FACILITES */
+	void(*set_cursor_start)(ScidaeWidget* self);
+	void(*set_cursor_end)(ScidaeWidget* self);
+	void(*drop_cursor)(ScidaeWidget* self);
+	void(*move_cursor_backward)(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor);
+	void(*move_cursor_forward)(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor);
+	void(*move_cursor_to_pos)(ScidaeWidget* self, ScidaeMeasurementLine* measurement, gint x, gint y, ScidaeWidgetCursorType cursor);
+
+	void(*insert_at_cursor)(ScidaeWidget* self, const gchar* text, gssize len);
+
+	void(*delete_backward)(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers);
+	void(*delete_forward)(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers);
 };
 
 /**
@@ -157,12 +193,13 @@ void scidae_widget_merge_markdown_end(ScidaeWidget* self, const gchar* text);
  * @width: The total width of the surface that this will be rendered to
  * @start_x: The position that the first line will start at (should be less than `width`)
  * @force: Force rendering, even if `width-start_x` is less than the necessary space (set if the previous result was of type `SCIDAE_MEASUREMENT_SKIP`)
+ * @attrs: Attributes about the current state of the measurement pipeline
  * @previous: A marker that the widget can use to keep track the previous line (initially set to a reference pointing to `NULL`).
  *
  * Measures a single line of the widget.
  * Returns: (transfer full): The measurement result
  */
-ScidaeMeasurementResult scidae_widget_measure(ScidaeWidget* self, gint width, gint start_x, gboolean force, gpointer* previous);
+ScidaeMeasurementResult scidae_widget_measure(ScidaeWidget* self, gint width, gint start_x, gboolean force, ScidaeWidgetMeasurementAttrs attrs, gpointer* previous);
 
 /**
  * scidae_widget_render:
@@ -193,6 +230,17 @@ ScidaeContext* scidae_widget_get_context(ScidaeWidget* self);
  * Set a new context of a widget.
  */
 void scidae_widget_set_context(ScidaeWidget* self, ScidaeContext* context);
+
+/* BEGIN EDITING FACILITES */
+
+void scidae_widget_move_cursor_backward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor);
+void scidae_widget_move_cursor_forward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor);
+void scidae_widget_move_cursor_to_pos(ScidaeWidget* self, ScidaeMeasurementLine* measurement, gint x, gint y, ScidaeWidgetCursorType cursor);
+
+void scidae_widget_insert_at_cursor(ScidaeWidget* self, const gchar* text, gssize len);
+
+void scidae_widget_delete_backward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers);
+void scidae_widget_delete_forward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers);
 
 G_END_DECLS
 

@@ -24,6 +24,14 @@ struct _ScidaeToplevelInterface {
  */
 gboolean scidae_toplevel_should_remeasure(ScidaeToplevel* self);
 
+/**
+ * scidae_toplevel_emit_redraw:
+ * @self: the toplevel widget
+ *
+ * Emit a redraw signal. Should only be used by implementors.
+ */
+void scidae_toplevel_emit_redraw(ScidaeToplevel* self);
+
 G_END_DECLS
 
 #endif // __SCIDAETOPLEVEL_H__

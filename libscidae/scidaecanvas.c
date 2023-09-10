@@ -160,7 +160,7 @@ static void scidae_canvas_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapsh
 
 	if (!self->latest || scidae_toplevel_should_remeasure(self->child)) {
 		gpointer prev = NULL;
-		ScidaeMeasurementResult measurement_r = scidae_widget_measure(child_widget, scidae_context_to_units(scidae_widget_get_context(child_widget), gtk_widget_get_width(widget)), 0, FALSE, &prev);
+		ScidaeMeasurementResult measurement_r = scidae_widget_measure(child_widget, scidae_context_to_units(scidae_widget_get_context(child_widget), gtk_widget_get_width(widget)), 0, FALSE, SCIDAE_WIDGET_MEASUREMENT_NO_ATTRS, &prev);
 		if (measurement_r.result != SCIDAE_MEASUREMENT_FINISH)
 			g_error("Unexpected measurement result!");
 		
@@ -173,15 +173,12 @@ static void scidae_canvas_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapsh
 		gtk_adjustment_set_upper(self->vadjustment, s_from_units(self->latest->height) * self->zoom);
 	}
 
-	GtkAllocation alloc;
-	gtk_widget_get_allocation(widget, &alloc);
-
 	ScidaeToUnitsFun s_to_units = scidae_context_get_to_units(scidae_widget_get_context(child_widget));
 	ScidaeRectangle rect = SCIDAE_RECTANGLE_INIT(
 		s_to_units(gtk_adjustment_get_value(self->hadjustment)),
 		s_to_units(gtk_adjustment_get_value(self->vadjustment)),
-		s_to_units(alloc.width / self->zoom),
-		s_to_units(alloc.height / self->zoom)
+		s_to_units(gtk_widget_get_width(widget) / self->zoom),
+		s_to_units(gtk_widget_get_height(widget) / self->zoom)
 	);
 
 	g_autoptr(GskRenderNode) render = scidae_widget_render(child_widget, self->latest, &rect);
@@ -248,7 +245,43 @@ static void scidae_canvas_zoom_changed(GtkGestureZoom*, gdouble scale, ScidaeCan
 	scidae_canvas_set_zoom(self, /*self->zoom * */scale); // I don't like this TODO: find a better solution
 }
 
+static void scidae_canvas_im_commit(GtkIMContext*, gchar* str, ScidaeCanvas* self) {
+	scidae_widget_insert_at_cursor(SCIDAE_WIDGET(self->child), str, -1);
+}
+
+static void scidae_canvas_handle_input(GtkEventControllerKey*, guint keyval, G_GNUC_UNUSED guint keycode, GdkModifierType state, ScidaeCanvas* self) {
+	switch (keyval) {
+		case GDK_KEY_Left:
+			scidae_widget_move_cursor_backward(SCIDAE_WIDGET(self->child), 0, SCIDAE_CURSOR_TYPE_PRIMARY);
+			break;
+		case GDK_KEY_Right:
+			scidae_widget_move_cursor_forward(SCIDAE_WIDGET(self->child), 0, SCIDAE_CURSOR_TYPE_PRIMARY);
+			break;
+		case GDK_KEY_BackSpace:
+			scidae_widget_delete_backward(SCIDAE_WIDGET(self->child), 0);
+			break;
+		case GDK_KEY_Delete:
+			scidae_widget_delete_forward(SCIDAE_WIDGET(self->child), 0);
+			break;
+		default:
+			(void)0;
+	}
+}
+
+static void scidae_canvas_handle_mouse(GtkGestureClick*, gint, gdouble x, gdouble y, ScidaeCanvas* self) {
+	ScidaeToUnitsFun to_units = scidae_context_get_to_units(scidae_widget_get_context(SCIDAE_WIDGET(self->child)));
+	scidae_widget_move_cursor_to_pos(
+		SCIDAE_WIDGET(self->child),
+		self->latest,
+		to_units(gtk_adjustment_get_value(self->hadjustment) + x / self->zoom),
+		to_units(gtk_adjustment_get_value(self->vadjustment) + y / self->zoom),
+		SCIDAE_CURSOR_TYPE_PRIMARY
+	);
+}
+
 static void scidae_canvas_init(ScidaeCanvas* self) {
+	gtk_widget_set_focusable(GTK_WIDGET(self), TRUE);
+
 	self->child = NULL;
 	self->latest = NULL;
 
@@ -259,6 +292,20 @@ static void scidae_canvas_init(ScidaeCanvas* self) {
 	GtkGesture* zoom_gest = gtk_gesture_zoom_new();
 	g_signal_connect(zoom_gest, "scale-changed", G_CALLBACK(scidae_canvas_zoom_changed), self);
 	gtk_widget_add_controller(GTK_WIDGET(self), GTK_EVENT_CONTROLLER(zoom_gest));
+
+	g_autoptr(GtkIMContext) ime = gtk_im_multicontext_new();
+	gtk_im_context_set_use_preedit(ime, TRUE);
+	gtk_im_context_set_client_widget(ime, GTK_WIDGET(self));
+	g_signal_connect(ime, "commit", G_CALLBACK(scidae_canvas_im_commit), self);
+
+	GtkEventController* ev = gtk_event_controller_key_new();
+	gtk_event_controller_key_set_im_context(GTK_EVENT_CONTROLLER_KEY(ev), ime);
+	g_signal_connect(ev, "key-pressed", G_CALLBACK(scidae_canvas_handle_input), self);
+	gtk_widget_add_controller(GTK_WIDGET(self), ev);
+
+	GtkGesture* click = gtk_gesture_click_new();
+	g_signal_connect(click, "pressed", G_CALLBACK(scidae_canvas_handle_mouse), self);
+	gtk_widget_add_controller(GTK_WIDGET(self), GTK_EVENT_CONTROLLER(click));
 }
 
 static void scidae_canvas_scrollable_iface_init(G_GNUC_UNUSED GtkScrollableInterface* iface) {}
@@ -276,6 +323,10 @@ static void scidae_canvas_context_fontsize_changed(ScidaeContext*, GParamSpec*, 
 	scidae_canvas_queue_remeasure(self);
 }
 
+static void scidae_canvas_toplevel_redraw(ScidaeToplevel*, ScidaeCanvas* self) {
+	scidae_canvas_queue_remeasure(self);
+}
+
 void scidae_canvas_set_child(ScidaeCanvas* self, ScidaeToplevel* child) {
 	g_return_if_fail(SCIDAE_IS_CANVAS(self));
 	g_return_if_fail(SCIDAE_IS_TOPLEVEL(child));
@@ -285,10 +336,12 @@ void scidae_canvas_set_child(ScidaeCanvas* self, ScidaeToplevel* child) {
 
 	if (self->child) {
 		g_signal_handlers_disconnect_by_func(scidae_widget_get_context(SCIDAE_WIDGET(self->child)), scidae_canvas_context_fontsize_changed, self);
+		g_signal_handlers_disconnect_by_func(self->child, scidae_canvas_toplevel_redraw, self);
 		g_object_unref(self->child);
 	}
 	self->child = g_object_ref(child);
 	g_signal_connect(scidae_widget_get_context(SCIDAE_WIDGET(self->child)), "notify::base-font-size", G_CALLBACK(scidae_canvas_context_fontsize_changed), self);
+	g_signal_connect(self->child, "redraw", G_CALLBACK(scidae_canvas_toplevel_redraw), self);
 
 	scidae_canvas_queue_remeasure(self);
 

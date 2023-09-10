@@ -62,7 +62,22 @@ static void scidae_widget_object_set_property(GObject* object, guint prop_id, co
 static void scidae_widget_class_init(ScidaeWidgetClass* class) {
 	GObjectClass* object_class = G_OBJECT_CLASS(class);
 	
+	class->get_markdown = NULL;
+	class->merge_markdown_start = NULL;
+	class->merge_markdown_end = NULL;
+
 	class->measure = NULL;
+	class->render = NULL;
+
+	class->drop_cursor = NULL;
+	class->move_cursor_backward = NULL;
+	class->move_cursor_forward = NULL;
+	class->move_cursor_to_pos = NULL;
+
+	class->insert_at_cursor = NULL;
+
+	class->delete_backward = NULL;
+	class->delete_forward = NULL;
 	
 	object_class->get_property = scidae_widget_object_get_property;
 	object_class->set_property = scidae_widget_object_set_property;
@@ -130,11 +145,13 @@ void scidae_widget_set_parent(ScidaeWidget* self, ScidaeContainer* parent) {
 	g_return_if_fail(parent == NULL || SCIDAE_IS_CONTAINER(parent));
 	ScidaeWidgetPrivate* priv = scidae_widget_get_instance_private(self);
 	
+	ScidaeWidget* self_ref = g_object_ref(self);
 	if (priv->parent)
 		scidae_container_unparent(priv->parent, self);
 	priv->parent = parent;
-	
-	g_object_notify_by_pspec(G_OBJECT(self), obj_properties[PROP_PARENT]);
+
+	g_object_notify_by_pspec(G_OBJECT(self_ref), obj_properties[PROP_PARENT]);
+	g_object_unref(self_ref);
 }
 
 gchar* scidae_widget_get_markdown(ScidaeWidget* self) {
@@ -158,11 +175,11 @@ void scidae_widget_merge_markdown_end(ScidaeWidget* self, const gchar* text) {
 	widget_class->merge_markdown_start(self, text);
 }
 
-ScidaeMeasurementResult scidae_widget_measure(ScidaeWidget* self, gint width, gint start_x, gboolean force, gpointer* previous) {
+ScidaeMeasurementResult scidae_widget_measure(ScidaeWidget* self, gint width, gint start_x, gboolean force, ScidaeWidgetMeasurementAttrs attrs, gpointer* previous) {
 	g_return_val_if_fail(SCIDAE_IS_WIDGET(self), scidae_measurement_result_failure);
 	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
 	g_return_val_if_fail(widget_class->measure, scidae_measurement_result_failure);
-	return widget_class->measure(self, width, start_x, force, previous);
+	return widget_class->measure(self, width, start_x, force, attrs, previous);
 }
 
 GskRenderNode* scidae_widget_render(ScidaeWidget* self, ScidaeMeasurementLine* measurement, const ScidaeRectangle* area) {
@@ -174,4 +191,63 @@ GskRenderNode* scidae_widget_render(ScidaeWidget* self, ScidaeMeasurementLine* m
 		measurement,
 		area == NULL ? &SCIDAE_RECTANGLE_INIT(0, 0, measurement->width, measurement->height) : area
 	);
+}
+
+/*private api*/ void scidae_widget_set_cursor_start(ScidaeWidget* self) {
+	g_return_if_fail(SCIDAE_IS_WIDGET(self));
+	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
+	g_return_if_fail(widget_class->set_cursor_start);
+	widget_class->set_cursor_start(self);
+}
+/*private api*/ void scidae_widget_set_cursor_end(ScidaeWidget* self) {
+	g_return_if_fail(SCIDAE_IS_WIDGET(self));
+	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
+	g_return_if_fail(widget_class->set_cursor_end);
+	widget_class->set_cursor_end(self);
+}
+/*private api*/ void scidae_widget_drop_cursor(ScidaeWidget* self) {
+	g_return_if_fail(SCIDAE_IS_WIDGET(self));
+	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
+	g_return_if_fail(widget_class->drop_cursor);
+	widget_class->drop_cursor(self);
+}
+void scidae_widget_move_cursor_backward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor) {
+	g_return_if_fail(SCIDAE_IS_WIDGET(self));
+	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
+	g_return_if_fail(widget_class->move_cursor_backward);
+	widget_class->move_cursor_backward(self, modifiers, cursor);
+}
+void scidae_widget_move_cursor_forward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor) {
+	g_return_if_fail(SCIDAE_IS_WIDGET(self));
+	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
+	g_return_if_fail(widget_class->move_cursor_forward);
+	widget_class->move_cursor_forward(self, modifiers, cursor);
+}
+
+void scidae_widget_move_cursor_to_pos(ScidaeWidget* self, ScidaeMeasurementLine* measurement, gint x, gint y, ScidaeWidgetCursorType cursor) {
+	g_return_if_fail(SCIDAE_IS_WIDGET(self));
+	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
+	g_return_if_fail(widget_class->move_cursor_to_pos);
+	widget_class->move_cursor_to_pos(self, measurement, x, y, cursor);
+}
+
+void scidae_widget_insert_at_cursor(ScidaeWidget* self, const gchar* text, gssize len) {
+	g_return_if_fail(SCIDAE_IS_WIDGET(self));
+	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
+	g_return_if_fail(widget_class->insert_at_cursor);
+	widget_class->insert_at_cursor(self, text, len);
+}
+
+void scidae_widget_delete_backward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers) {
+	g_return_if_fail(SCIDAE_IS_WIDGET(self));
+	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
+	g_return_if_fail(widget_class->delete_backward);
+	widget_class->delete_backward(self, modifiers);
+}
+
+void scidae_widget_delete_forward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers) {
+	g_return_if_fail(SCIDAE_IS_WIDGET(self));
+	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_GET_CLASS(self);
+	g_return_if_fail(widget_class->delete_forward);
+	widget_class->delete_forward(self, modifiers);
 }

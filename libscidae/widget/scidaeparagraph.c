@@ -3,6 +3,7 @@
 #include "scidaewidget-alt.h"
 #include "scidaetoplevel.h"
 
+#include "scidaewidget-private.h"
 #include "scidaeutil-private.h"
 
 typedef struct {
@@ -35,16 +36,20 @@ struct _ScidaeParagraphMeasurementLine {
 	ScidaeMeasurementLine parent;
 
 	GArray* measurements;
+	ScidaeParagraphMeasurementWrapper* m_cursor;
 };
 
 struct _ScidaeParagraph {
 	ScidaeWidget parent_instance;
 
 	GList* nodes;
+	GHashTable* node_table;
 	gint line_spacing;
 
 	gboolean force_remeasure;
 	GHashTable* remeasure_requests;
+
+	ScidaeWidget* cursor_holder;
 };
 
 static void scidae_paragraph_container_iface_init(ScidaeContainerInterface* iface);
@@ -64,6 +69,7 @@ GParamSpec* obj_properties[N_PROPERTIES] = { 0, };
 static void scidae_paragraph_object_dispose(GObject* object) {
 	ScidaeParagraph* self = SCIDAE_PARAGRAPH(object);
 	g_clear_pointer(&self->remeasure_requests, g_hash_table_unref);
+	g_clear_pointer(&self->node_table, g_hash_table_unref);
 	g_list_free_full(self->nodes, g_object_unref);
 	
 	G_OBJECT_CLASS(scidae_paragraph_parent_class)->dispose(object);
@@ -182,6 +188,7 @@ static ScidaeMeasurementResult scidae_paragraph_widget_measure_from(ScidaeWidget
 		ScidaeParagraphMeasurementLine,
 		(GDestroyNotify)scidae_paragraph_measurement_line_free
 	);
+	ret->m_cursor = NULL;
 	
 	ret->parent.width = width;
 	ret->parent.baseline = 0;
@@ -201,7 +208,7 @@ static ScidaeMeasurementResult scidae_paragraph_widget_measure_from(ScidaeWidget
 		ScidaeMeasurementResult res;
 		do {
 			gboolean has_skipped = FALSE;
-			res = scidae_widget_measure(SCIDAE_WIDGET(i->data), width, curX, FALSE, &store);
+			res = scidae_widget_measure(SCIDAE_WIDGET(i->data), width, curX, FALSE, SCIDAE_WIDGET_MEASUREMENT_NO_ATTRS, &store);
 redo:
 			switch (res.result) {
 				case SCIDAE_MEASUREMENT_FAILURE:
@@ -216,7 +223,7 @@ redo:
 					scidae_paragraph_widget_measure_make_line(self, ret, &cur_y, current_line);
 					current_line = scidae_paragraph_create_line_measurement_buf();
 					curX = 0;
-					res = scidae_widget_measure(SCIDAE_WIDGET(i->data), width, curX, TRUE, &store);
+					res = scidae_widget_measure(SCIDAE_WIDGET(i->data), width, curX, TRUE, SCIDAE_WIDGET_MEASUREMENT_NO_ATTRS, &store);
 					has_skipped = TRUE;
 					goto redo;
 					break;
@@ -228,6 +235,10 @@ redo:
 						.node = i
 					};
 					g_array_append_val(current_line, wrapper);
+					if (res.line->props & SCIDAE_MEASUREMENT_HAS_CURSOR) {
+						ret->m_cursor = &g_array_index(current_line, ScidaeParagraphMeasurementWrapper, current_line->len - 1);
+						self->cursor_holder = i->data;
+					}
 					// makeLine
 					scidae_paragraph_widget_measure_make_line(self, ret, &cur_y, current_line);
 					current_line = scidae_paragraph_create_line_measurement_buf();
@@ -242,6 +253,10 @@ redo:
 					};
 					curX += res.line->width;
 					g_array_append_val(current_line, wrapper);
+					if (res.line->props & SCIDAE_MEASUREMENT_HAS_CURSOR) {
+						ret->m_cursor = &g_array_index(current_line, ScidaeParagraphMeasurementWrapper, current_line->len - 1);
+						self->cursor_holder = i->data;
+					}
 				} break;
 				default:
 					g_critical("Received unexpected result type (%d). Something bad is probably happening.", res.result);
@@ -261,7 +276,7 @@ next_node:
 	return result;
 }
 
-static ScidaeMeasurementResult scidae_paragraph_widget_measure(ScidaeWidget* widget, gint width, gint start_x, gboolean force, G_GNUC_UNUSED gpointer* previous) {
+static ScidaeMeasurementResult scidae_paragraph_widget_measure(ScidaeWidget* widget, gint width, gint start_x, gboolean force, ScidaeWidgetMeasurementAttrs attrs, G_GNUC_UNUSED gpointer* previous) {
 	ScidaeParagraph* self = SCIDAE_PARAGRAPH(widget);
 	GList* start = self->nodes;
 	/*if (!self->force_remeasure) {
@@ -325,6 +340,97 @@ static GskRenderNode* scidae_paragraph_widget_render(G_GNUC_UNUSED ScidaeWidget*
 	return gsk_container_node_new((GskRenderNode**)children->pdata, children->len);
 }
 
+// Editing
+static void scidae_paragraph_widget_set_cursor_start(ScidaeWidget* widget) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(widget);
+	if (self->cursor_holder)
+		scidae_widget_drop_cursor(self->cursor_holder);
+	if (self->nodes) {
+		self->cursor_holder = self->nodes->data;
+		scidae_widget_set_cursor_start(self->cursor_holder);
+	} else
+		g_critical("set_cursor_start called on paragraph without nodes");
+}
+static void scidae_paragraph_widget_set_cursor_end(ScidaeWidget* widget) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(widget);
+	if (self->cursor_holder)
+		scidae_widget_drop_cursor(self->cursor_holder);
+	if (self->nodes) {
+		self->cursor_holder = g_list_last(self->nodes)->data;
+		scidae_widget_set_cursor_start(self->cursor_holder);
+	} else
+		g_critical("set_cursor_end called on paragraph without nodes");
+}
+static void scidae_paragraph_widget_drop_cursor(ScidaeWidget* widget) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(widget);
+	scidae_widget_drop_cursor(self->cursor_holder);
+	self->cursor_holder = NULL;
+}
+static void scidae_paragraph_widget_move_cursor_backward(ScidaeWidget* widget, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(widget);
+	scidae_widget_move_cursor_backward(self->cursor_holder, modifiers, cursor);
+}
+
+static void scidae_paragraph_widget_move_cursor_forward(ScidaeWidget* widget, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(widget);
+	scidae_widget_move_cursor_forward(self->cursor_holder, modifiers, cursor);
+}
+
+static void scidae_paragraph_widget_move_cursor_to_pos(G_GNUC_UNUSED ScidaeWidget* widget, ScidaeMeasurementLine* w_measurement, gint x, gint y, ScidaeWidgetCursorType cursor) {
+	g_return_if_fail(w_measurement->creator == SCIDAE_TYPE_PARAGRAPH);
+	ScidaeParagraphMeasurementLine* measurement = (ScidaeParagraphMeasurementLine*)w_measurement;
+
+	ScidaeParagraphInternalMeasurementLineWrapper* found_wrapper = NULL;
+	ScidaeParagraphMeasurementWrapper* found_segment = NULL;
+
+	for (guint i = 0; i < measurement->measurements->len - 1; i++) {
+		ScidaeParagraphInternalMeasurementLineWrapper wrapper = g_array_index(measurement->measurements, ScidaeParagraphInternalMeasurementLineWrapper, i);
+		ScidaeParagraphInternalMeasurementLineWrapper next_wrapper = g_array_index(measurement->measurements, ScidaeParagraphInternalMeasurementLineWrapper, i+1);
+
+		if (wrapper.ypos <= y && next_wrapper.ypos > y) {
+			found_wrapper = &wrapper;
+			break;
+		}
+	}
+	if (!found_wrapper && measurement->measurements->len > 0)
+		found_wrapper = &g_array_index(measurement->measurements, ScidaeParagraphInternalMeasurementLineWrapper, measurement->measurements->len - 1);
+
+	if (!found_wrapper)
+		g_return_if_reached();
+
+	for (guint j = 0; j < found_wrapper->measurements->len - 1; j++) {
+		ScidaeParagraphMeasurementWrapper segment = g_array_index(found_wrapper->measurements, ScidaeParagraphMeasurementWrapper, j);
+		ScidaeParagraphMeasurementWrapper next_segment = g_array_index(found_wrapper->measurements, ScidaeParagraphMeasurementWrapper, j+1);
+
+		if (segment.xpos <= x && next_segment.xpos > x) {
+			found_segment = &segment;
+			break;
+		}
+	}
+	if (!found_segment && found_wrapper->measurements->len > 0)
+		found_segment = &g_array_index(found_wrapper->measurements, ScidaeParagraphMeasurementWrapper, found_wrapper->measurements->len - 1);
+
+	if (!found_segment)
+		g_return_if_reached();
+
+	scidae_widget_move_cursor_to_pos(found_segment->node->data, found_segment->line, x - found_segment->xpos, y - found_segment->yoffset - found_wrapper->ypos, cursor);
+}
+
+void scidae_paragraph_widget_insert_at_cursor(ScidaeWidget* widget, const gchar* text, gssize len) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(widget);
+	scidae_widget_insert_at_cursor(self->cursor_holder, text, len);
+}
+
+void scidae_paragraph_widget_delete_backward(ScidaeWidget* widget, ScidaeWidgetMovementModifier modifiers) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(widget);
+	scidae_widget_delete_backward(self->cursor_holder, modifiers);
+}
+
+void scidae_paragraph_widget_delete_forward(ScidaeWidget* widget, ScidaeWidgetMovementModifier modifiers) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(widget);
+	scidae_widget_delete_forward(self->cursor_holder, modifiers);
+}
+
 static void scidae_paragraph_class_init(ScidaeParagraphClass* class) {
 	GObjectClass* object_class= G_OBJECT_CLASS(class);
 	ScidaeWidgetClass* widget_class = SCIDAE_WIDGET_CLASS(class);
@@ -341,6 +447,16 @@ static void scidae_paragraph_class_init(ScidaeParagraphClass* class) {
 	widget_class->measure = scidae_paragraph_widget_measure;
 	widget_class->render = scidae_paragraph_widget_render;
 	
+	widget_class->set_cursor_start = scidae_paragraph_widget_set_cursor_start;
+	widget_class->set_cursor_end = scidae_paragraph_widget_set_cursor_end;
+	widget_class->drop_cursor = scidae_paragraph_widget_drop_cursor;
+	widget_class->move_cursor_backward = scidae_paragraph_widget_move_cursor_backward;
+	widget_class->move_cursor_forward = scidae_paragraph_widget_move_cursor_forward;
+	widget_class->move_cursor_to_pos = scidae_paragraph_widget_move_cursor_to_pos;
+	widget_class->insert_at_cursor = scidae_paragraph_widget_insert_at_cursor;
+	widget_class->delete_backward = scidae_paragraph_widget_delete_backward;
+	widget_class->delete_forward = scidae_paragraph_widget_delete_forward;
+
 	/**
 	 * ScidaeParagraph:line-spacing: (attributes org.gtk.Property.get=scidae_paragraph_get_line_spacing org.gtk.Property.set=scidae_paragraph_set_line_spacing)
 	 *
@@ -360,9 +476,12 @@ static void scidae_paragraph_class_init(ScidaeParagraphClass* class) {
 static void scidae_paragraph_init(ScidaeParagraph* self) {
 	self->line_spacing = 0.f;
 	self->nodes = NULL;
+	self->node_table = g_hash_table_new(g_direct_hash, g_direct_equal);
 	
 	self->force_remeasure = FALSE;
 	self->remeasure_requests = g_hash_table_new(g_direct_hash, g_direct_equal);
+
+	self->cursor_holder = NULL;
 }
 
 static GList* scidae_paragraph_container_get_children(ScidaeContainer* container) {
@@ -370,11 +489,70 @@ static GList* scidae_paragraph_container_get_children(ScidaeContainer* container
 	return g_list_copy(self->nodes);
 }
 
+static ScidaeWidget* scidae_paragraph_container_get_prev(ScidaeContainer* container, ScidaeWidget* widget) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(container);
+
+	GList* node = g_hash_table_lookup(self->node_table, widget);
+	if (!node)
+		return NULL;
+	return node->prev == NULL ? NULL : node->prev->data;
+}
+
+static ScidaeWidget* scidae_paragraph_container_get_next(ScidaeContainer* container, ScidaeWidget* widget) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(container);
+
+	GList* node = g_hash_table_lookup(self->node_table, widget);
+	if (!node)
+		return NULL;
+	return node->next == NULL ? NULL : node->next->data;
+}
+
+
 static inline void scidae_paragraph_request_redraw(ScidaeParagraph* self) {
+	scidae_toplevel_emit_redraw(SCIDAE_TOPLEVEL(self));
+
 	ScidaeContainer* parent = scidae_widget_get_parent(SCIDAE_WIDGET(self));
 	if (!parent)
 		return;
 	scidae_container_mark_child_remeasure(parent, SCIDAE_WIDGET(self));
+}
+
+static void scidae_paragraph_container_unparent(ScidaeContainer* container, ScidaeWidget* child) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(container);
+
+	GList* node = g_hash_table_lookup(self->node_table, child);
+	g_return_if_fail(node != NULL);
+	g_hash_table_remove(self->node_table, child);
+
+	if (node->data == self->cursor_holder) {
+		if (node->prev) {
+			self->cursor_holder = node->prev->data;
+			scidae_widget_set_cursor_end(self->cursor_holder);
+		} else if (node->next) {
+			self->cursor_holder = node->next->data;
+			scidae_widget_set_cursor_start(self->cursor_holder);
+		} else {
+			self->cursor_holder = NULL;
+			g_debug("Paragraph %p is out of widgets :/\n", (void*)self);
+		}
+	}
+
+	self->nodes = g_list_remove_link(self->nodes, node);
+	g_object_unref(node->data);
+	g_list_free(node);
+
+	scidae_paragraph_request_redraw(self);
+}
+
+void scidae_paragraph_container_update_cursor(ScidaeContainer* container, ScidaeWidget* cursor_holder) {
+	ScidaeParagraph* self = SCIDAE_PARAGRAPH(container);
+	if (self->cursor_holder == cursor_holder)
+		return;
+	g_return_if_fail(g_hash_table_contains(self->node_table, cursor_holder));
+	if (self->cursor_holder)
+		scidae_widget_drop_cursor(self->cursor_holder);
+	self->cursor_holder = cursor_holder;
+	scidae_paragraph_request_redraw(self);
 }
 
 void scidae_paragraph_container_mark_child_remeasure(ScidaeContainer* container, ScidaeWidget* child) {
@@ -385,6 +563,10 @@ void scidae_paragraph_container_mark_child_remeasure(ScidaeContainer* container,
 
 static void scidae_paragraph_container_iface_init(ScidaeContainerInterface* iface) {
 	iface->get_children = scidae_paragraph_container_get_children;
+	iface->get_prev = scidae_paragraph_container_get_prev;
+	iface->get_next = scidae_paragraph_container_get_next;
+	iface->unparent = scidae_paragraph_container_unparent;
+	iface->update_cursor = scidae_paragraph_container_update_cursor;
 	iface->mark_child_remeasure = scidae_paragraph_container_mark_child_remeasure;
 }
 
@@ -419,11 +601,33 @@ void scidae_paragraph_set_line_spacing(ScidaeParagraph* self, gint spacing) {
 void scidae_paragraph_add_child(ScidaeParagraph* self, ScidaeWidget* child) {
 	g_return_if_fail(SCIDAE_IS_PARAGRAPH(self));
 	
-	self->nodes = g_list_append(self->nodes, g_object_ref(child));
+	GList* link = g_list_alloc();
+	link->data = g_object_ref_sink(child);
+	//self->nodes = g_list_append(self->nodes, g_object_ref_sink(child));
+	self->nodes = g_list_insert_before_link(self->nodes, NULL, link);
+	g_hash_table_insert(self->node_table, child, link);
+
+	scidae_widget_set_parent(child, SCIDAE_CONTAINER(self));
+
+	if (self->cursor_holder == NULL) {
+		self->cursor_holder = child;
+		scidae_widget_set_cursor_start(self->cursor_holder);
+	}
 }
 
 void scidae_paragraph_insert_child_at(ScidaeParagraph* self, ScidaeWidget* child, gint index) {
 	g_return_if_fail(SCIDAE_IS_PARAGRAPH(self));
 	
-	self->nodes = g_list_insert(self->nodes, g_object_ref(child), index);
+	//self->nodes = g_list_insert(self->nodes, g_object_ref_sink(child), index);
+	GList* link = g_list_alloc();
+	link->data = g_object_ref_sink(child);
+	self->nodes = g_list_insert_before_link(self->nodes, g_list_nth(self->nodes, index), link);
+	g_hash_table_insert(self->node_table, child, link);
+
+	scidae_widget_set_parent(child, SCIDAE_CONTAINER(self));
+
+	if (self->cursor_holder == NULL) {
+		self->cursor_holder = child;
+		scidae_widget_set_cursor_start(self->cursor_holder);
+	}
 }

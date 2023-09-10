@@ -1,0 +1,82 @@
+From 07d6e9c5a55fcf71eb34021fe5bb05fd0782c4af Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Florian=20=22sp1rit=22=E2=80=8B?= <sp1rit@disroot.org>
+Date: Sun, 10 Sep 2023 19:23:36 +0200
+Subject: [PATCH] Added primitive support for the meson buildsystem
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Florian "sp1rit"​ <sp1rit@disroot.org>
+---
+ gen/meson.build | 18 ++++++++++++++++++
+ meson.build     |  7 +++++++
+ src/meson.build | 18 ++++++++++++++++++
+ 3 files changed, 43 insertions(+)
+ create mode 100644 gen/meson.build
+ create mode 100644 meson.build
+ create mode 100644 src/meson.build
+
+diff --git a/gen/meson.build b/gen/meson.build
+new file mode 100644
+index 0000000..e98cabc
+--- /dev/null
++++ b/gen/meson.build
+@@ -0,0 +1,18 @@
++gen_util = static_library('gen-util', 'util.c', install: false)
++
++generator_names = ['bidirectional', 'case', 'character', 'line', 'sentence', 'word']
++
++gen_sources = []
++
++foreach name : generator_names
++	gen = executable('gen-@0@'.format(name), '@0@.c'.format(name),
++		link_with: gen_util
++	)
++
++	gen_sources += custom_target('gen-@0@-output'.format(name),
++		output: '@0@.h'.format(name),
++		depends: gen,
++		command: [find_program('sh', required: true), '-c', 'cd @0@; @1@'.format(meson.project_source_root(), gen.full_path())],
++		capture: true
++	)
++endforeach
+diff --git a/meson.build b/meson.build
+new file mode 100644
+index 0000000..eab9a3b
+--- /dev/null
++++ b/meson.build
+@@ -0,0 +1,7 @@
++project('libgrapheme', 'c',
++	version: '2.0.1',
++	default_options: ['warning_level=3']
++)
++
++subdir('gen')
++subdir('src')
+diff --git a/src/meson.build b/src/meson.build
+new file mode 100644
+index 0000000..c54307b
+--- /dev/null
++++ b/src/meson.build
+@@ -0,0 +1,18 @@
++grapheme_src = [
++	'bidirectional.c',
++	'case.c',
++	'character.c',
++	'line.c',
++	'sentence.c',
++	'utf8.c',
++	'util.c',
++	'word.c'
++]
++
++grapheme_lib = library('grapheme', grapheme_src, gen_sources,
++	install: true
++)
++grapheme_dep = declare_dependency(
++	include_directories: [ include_directories('..') ],
++	link_with: grapheme_lib
++)
+-- 
+2.41.0
+

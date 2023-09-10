@@ -19,8 +19,11 @@ struct _ScidaeContainerInterface {
 	GTypeInterface parent_iface;
 	
 	GList*(*get_children)(ScidaeContainer* self);
+	ScidaeWidget*(*get_prev)(ScidaeContainer* self, ScidaeWidget* widget);
+	ScidaeWidget*(*get_next)(ScidaeContainer* self, ScidaeWidget* widget);
 	void(*unparent)(ScidaeContainer* self, ScidaeWidget* child);
 
+	void(*update_cursor)(ScidaeContainer* self, ScidaeWidget* cursor_holder);
 	void(*mark_child_remeasure)(ScidaeContainer* self, ScidaeWidget* child);
 };
 
@@ -34,6 +37,26 @@ struct _ScidaeContainerInterface {
 GList* scidae_container_get_children(ScidaeContainer* self);
 
 /**
+ * scidae_container_get_prev:
+ * @self: a `ScidaeContainer`
+ * @widget: the `ScidaeWidget`
+ *
+ * Get the widget before `widget`.
+ * Returns: (transfer none): the widget behind
+ */
+ScidaeWidget* scidae_container_get_prev(ScidaeContainer* self, ScidaeWidget* widget);
+
+/**
+ * scidae_container_get_next:
+ * @self: a `ScidaeContainer`
+ * @widget: the `ScidaeWidget`
+ *
+ * Get the widget in front of `widget`.
+ * Returns: (transfer none): the widget infront
+ */
+ScidaeWidget* scidae_container_get_next(ScidaeContainer* self, ScidaeWidget* widget);
+
+/**
  * scidae_container_unparent:
  * @self: a `ScidaeContainer`
  * @child: the widget that removed this parent
@@ -41,6 +64,15 @@ GList* scidae_container_get_children(ScidaeContainer* self);
  * Called when a child removes this parent.
  */
 void scidae_container_unparent(ScidaeContainer* self, ScidaeWidget* child);
+
+/**
+ * scidae_container_update_cursor:
+ * @self: the container
+ * @cursor_holder: the widgets that now holds the cursor
+ *
+ * Update the cursor holder thats tracked by this container.
+ */
+void scidae_container_update_cursor(ScidaeContainer* self, ScidaeWidget* cursor_holder);
 
 /**
  * scidae_container_mark_child_remeasure:

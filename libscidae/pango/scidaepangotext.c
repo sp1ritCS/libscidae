@@ -7,11 +7,13 @@
 struct _ScidaePangoTextMeasurementLine {
 	ScidaeMeasurementLine parent;
 	Pango2Line* line;
+	GArray* rects;
 };
 typedef struct _ScidaePangoTextMeasurementLine ScidaePangoTextMeasurementLine;
 static void scidae_pango_text_measurement_line_free(ScidaePangoTextMeasurementLine* self) {
 	g_return_if_fail(self->parent.creator == SCIDAE_TYPE_PANGO_TEXT);
 	pango2_line_free(self->line);
+	g_array_unref(self->rects);
 	g_free(self);
 }
 
@@ -20,7 +22,7 @@ struct _ScidaePangoText {
 };
 G_DEFINE_TYPE (ScidaePangoText, scidae_pango_text, SCIDAE_TYPE_TEXT)
 
-static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* widget, gint width, gint start_x, G_GNUC_UNUSED gboolean force, gpointer* previous) {
+static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* widget, gint width, gint start_x, G_GNUC_UNUSED gboolean force, ScidaeWidgetMeasurementAttrs attrs, gpointer* previous) {
 	ScidaePangoText* self = SCIDAE_PANGO_TEXT(widget);
 	
 	Pango2LineBreaker* breaker = *previous;
@@ -46,9 +48,10 @@ static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* wi
 		SCIDAE_TYPE_PANGO_TEXT,
 		ScidaePangoTextMeasurementLine,
 		(GDestroyNotify)scidae_pango_text_measurement_line_free
-	);																																									  
+	);
 
 	measurement->line = pango2_line_breaker_next_line(breaker, start_x, width - start_x, PANGO2_WRAP_WORD_CHAR, PANGO2_ELLIPSIZE_NONE);
+	measurement->parent.props = 0;
 	
 	Pango2Rectangle ext;
 	pango2_line_get_extents(measurement->line, NULL, &ext);
@@ -56,6 +59,24 @@ static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* wi
 	measurement->parent.width = ext.width;
 	measurement->parent.height = ext.height;
 	measurement->parent.baseline = -ext.y;
+
+	measurement->rects = g_array_new(FALSE, FALSE, sizeof(Pango2Rectangle));
+	glong primary,secondary;
+	scidae_text_get_cursors(SCIDAE_TEXT(self), &primary, &secondary);
+	gint start = pango2_line_get_start_index(measurement->line);
+	gint end = start + pango2_line_get_length(measurement->line);
+	if (primary >= 0 && start <= primary && end > primary) {
+		Pango2Rectangle rect;
+		pango2_line_get_cursor_pos(measurement->line, primary, &rect, NULL);
+		g_array_append_val(measurement->rects, rect);
+
+		measurement->parent.props |= SCIDAE_MEASUREMENT_HAS_CURSOR;
+	}
+	if (secondary >= 0 && primary != secondary && start <= secondary && end > secondary) {
+		Pango2Rectangle rect;
+		pango2_line_get_cursor_pos(measurement->line, primary, NULL, &rect);
+		g_array_append_val(measurement->rects, rect);
+	}
 
 	ScidaeMeasurementResult res;
 	res.line = (ScidaeMeasurementLine*)measurement;
@@ -80,19 +101,40 @@ static GskRenderNode* scidae_pango_text_widget_render(G_GNUC_UNUSED ScidaeWidget
 	));
 	cairo_t* ctx = gsk_cairo_node_get_draw_context(node);
 	
-	cairo_rectangle(ctx, pango2_units_to_double(0),
+	/*cairo_rectangle(ctx, pango2_units_to_double(0),
 		pango2_units_to_double(0),
 		pango2_units_to_double(measurement->parent.width),
-		pango2_units_to_double(measurement->parent.height));
+		pango2_units_to_double(measurement->parent.height));*/
 
 	cairo_set_source_rgba(ctx, 0.0, 0.0, 0.0, 1.0);
 	cairo_move_to(ctx, 0, pango2_units_to_double(measurement->parent.baseline));
 	pango2_cairo_show_line(ctx, measurement->line);
 	cairo_stroke(ctx);
 
+	for (guint i = 0; i < measurement->rects->len; i++) {
+		Pango2Rectangle rect = g_array_index(measurement->rects, Pango2Rectangle, i);
+		cairo_rectangle(ctx,
+			pango2_units_to_double(rect.x),
+			pango2_units_to_double(rect.y + measurement->parent.baseline),
+			pango2_units_to_double(rect.width),
+			pango2_units_to_double(rect.height)
+		);
+		cairo_stroke(ctx);
+	}
+
 	cairo_destroy(ctx);
 	
 	return node;
+}
+
+void scidae_pango_widget_move_cursor_to_pos(ScidaeWidget* widget, ScidaeMeasurementLine* w_measurement, gint x, G_GNUC_UNUSED gint y, ScidaeWidgetCursorType cursor) {
+	g_return_if_fail(w_measurement->creator == SCIDAE_TYPE_PANGO_TEXT);
+	ScidaePangoTextMeasurementLine* measurement = (ScidaePangoTextMeasurementLine*)w_measurement;
+
+	gint idx,it;
+	pango2_line_x_to_index(measurement->line, x, &idx, &it);
+
+	scidae_text_set_cursor(SCIDAE_TEXT(widget), idx + it);
 }
 
 static void scidae_pango_text_class_init(ScidaePangoTextClass* class) {
@@ -100,6 +142,8 @@ static void scidae_pango_text_class_init(ScidaePangoTextClass* class) {
 
 	widget_class->measure = scidae_pango_text_widget_measure;
 	widget_class->render = scidae_pango_text_widget_render;
+
+	widget_class->move_cursor_to_pos = scidae_pango_widget_move_cursor_to_pos;
 }
 
 static void scidae_pango_text_init(ScidaePangoText*) {}

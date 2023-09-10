@@ -31,6 +31,25 @@ const gchar* scidae_text_get_body(ScidaeText* self);
  */
 void scidae_text_set_body(ScidaeText* self, const gchar* text);
 
+/**
+ * scidae_text_get_cursors:
+ * @self: the text widget
+ * @primary: (nullable): the location to store the primary cursor
+ * @secondary: (nullable): the location to store the secondary cursor
+ *
+ * Get the positions of the cursors of this widget.
+ */
+void scidae_text_get_cursors(ScidaeText* self, glong* primary, glong* secondary);
+
+/**
+ * scidae_text_set_cursor:
+ * @self: the text widget
+ * @cursor: the cursor index
+ *
+ * Set both primary & secondary cursors to `cursor`.
+ */
+void scidae_text_set_cursor(ScidaeText* self, glong cursor);
+
 G_END_DECLS
 
 #endif // __SCIDAETEXT_H__

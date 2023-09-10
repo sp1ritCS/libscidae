@@ -47,9 +47,12 @@ scidae_public_deps = [
 	pango2.get_variable('libpango_dep')
 ]
 
+libgrapheme = subproject('libgrapheme')
+
 scidae_lib = library('scidae', scidae_src,
 	dependencies: [
-		scidae_public_deps
+		scidae_public_deps,
+		libgrapheme.get_variable('grapheme_dep')
 	],
 	c_args: ['-DG_LOG_DOMAIN="Scidae"', '-Wno-pedantic'],
 	include_directories: inc_dirs,
