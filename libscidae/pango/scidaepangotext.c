@@ -22,9 +22,39 @@ struct _ScidaePangoText {
 };
 G_DEFINE_TYPE (ScidaePangoText, scidae_pango_text, SCIDAE_TYPE_TEXT)
 
-static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* widget, gint width, gint start_x, G_GNUC_UNUSED gboolean force, ScidaeWidgetMeasurementAttrs attrs, gpointer* previous) {
+static Pango2Color scidae_pango_text_selection_foreground = {
+	.red = 0xFF * 0xFF,
+	.green = 0xFF * 0xFF,
+	.blue = 0xFF * 0xFF,
+	.alpha = 0xFF * 0xFF
+};
+static Pango2Color scidae_pango_text_selection_background = {
+	.red = 0xFF * 0x20,
+	.green = 0xFF * 0x60,
+	.blue = 0xFF * 0xF0,
+	.alpha = 0xFF * 0xFF
+};
+static inline void scidae_pango_text_select_area(Pango2AttrList* attrs, guint start, guint end) {
+	Pango2Attribute* fg = pango2_attr_foreground_new(&scidae_pango_text_selection_foreground);
+	Pango2Attribute* bg = pango2_attr_background_new(&scidae_pango_text_selection_background);
+	pango2_attribute_set_range(fg, start, end);
+	pango2_attribute_set_range(bg, start, end);
+	pango2_attr_list_change(attrs, fg);
+	pango2_attr_list_change(attrs, bg);
+}
+
+static inline gboolean is_in_range(gint target, gint start, gint end) {
+	if (target < 0)
+		return FALSE;
+	return target >= start && target <= end;
+}
+
+static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* widget, gint width, gint start_x, G_GNUC_UNUSED gboolean force, ScidaeWidgetMeasurementAttrs mattrs, gpointer* previous) {
 	ScidaePangoText* self = SCIDAE_PANGO_TEXT(widget);
 	
+	glong master,slave;
+	scidae_text_get_cursors(SCIDAE_TEXT(self), &master, &slave);
+
 	Pango2LineBreaker* breaker = *previous;
 	if (!breaker) {
 		ScidaeContext* context = scidae_widget_get_context(widget);
@@ -38,6 +68,34 @@ static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* wi
 		pango2_attr_list_change(attrs, pango2_attr_size_new(base_font_size));
 		if (g_strcmp0(body, "Hello") == 0)
 			pango2_attr_list_change(attrs, pango2_attr_size_new(base_font_size*1.5));
+
+		if (mattrs & SCIDAE_WIDGET_MEASUREMENT_CONTINUES_SELECTION) {
+			if (master >= 0) {
+				scidae_pango_text_select_area(attrs, 0, master);
+			} else if (slave >= 0) {
+				scidae_pango_text_select_area(attrs, 0, slave);
+			} else {
+				scidae_pango_text_select_area(attrs, 0, strlen(body));
+				// ends with selection
+			}
+		} else if (master != slave) {
+			if (master >= 0 && slave >= 0) {
+				glong lesser = master;
+				glong greater = slave;
+				if (lesser > greater) {
+					lesser = slave;
+					greater = master;
+				}
+				scidae_pango_text_select_area(attrs, lesser, greater);
+			} else if (master >= 0) {
+				scidae_pango_text_select_area(attrs, master, strlen(body));
+				// ends with selection
+			} else if (slave >= 0) {
+				scidae_pango_text_select_area(attrs, slave, strlen(body));
+				// ends with selection
+			}
+		}
+
 		pango2_line_breaker_add_text(breaker, body, -1, attrs);
 	}
 
@@ -61,22 +119,27 @@ static ScidaeMeasurementResult scidae_pango_text_widget_measure(ScidaeWidget* wi
 	measurement->parent.baseline = -ext.y;
 
 	measurement->rects = g_array_new(FALSE, FALSE, sizeof(Pango2Rectangle));
-	glong primary,secondary;
-	scidae_text_get_cursors(SCIDAE_TEXT(self), &primary, &secondary);
+
 	gint start = pango2_line_get_start_index(measurement->line);
 	gint end = start + pango2_line_get_length(measurement->line);
-	if (primary >= 0 && start <= primary && end > primary) {
-		Pango2Rectangle rect;
-		pango2_line_get_cursor_pos(measurement->line, primary, &rect, NULL);
-		g_array_append_val(measurement->rects, rect);
 
-		measurement->parent.props |= SCIDAE_MEASUREMENT_HAS_CURSOR;
-	}
-	if (secondary >= 0 && primary != secondary && start <= secondary && end > secondary) {
+	if (master >= 0 && start <= master && end >= master) {
 		Pango2Rectangle rect;
-		pango2_line_get_cursor_pos(measurement->line, primary, NULL, &rect);
+		pango2_line_get_cursor_pos(measurement->line, master, &rect, NULL);
 		g_array_append_val(measurement->rects, rect);
+		measurement->parent.props |= SCIDAE_MEASUREMENT_HAS_MASTER_CURSOR;
 	}
+	if (slave >= 0 && start <= slave && end >= slave) {
+		measurement->parent.props |= SCIDAE_MEASUREMENT_HAS_SLAVE_CURSOR;
+	}
+
+	/*if (mattrs & SCIDAE_WIDGET_MEASUREMENT_CONTINUES_SELECTION) {
+		if (!is_in_range(master, start, end) && !is_in_range(slave, start, end))
+			measurement->parent.props |= SCIDAE_MEASUREMENT_ENDS_WITH_SELECTION;
+	} else {
+		if (!is_in_range(master, start, end) ^ !is_in_range(slave, start, end)) // occurs when either master or slave is set, but not when both are set
+			measurement->parent.props |= SCIDAE_MEASUREMENT_ENDS_WITH_SELECTION;
+	}*/
 
 	ScidaeMeasurementResult res;
 	res.line = (ScidaeMeasurementLine*)measurement;
@@ -127,14 +190,37 @@ static GskRenderNode* scidae_pango_text_widget_render(G_GNUC_UNUSED ScidaeWidget
 	return node;
 }
 
-void scidae_pango_widget_move_cursor_to_pos(ScidaeWidget* widget, ScidaeMeasurementLine* w_measurement, gint x, G_GNUC_UNUSED gint y, ScidaeWidgetCursorType cursor) {
+static void scidae_pango_widget_move_cursor_to_pos(ScidaeWidget* widget, ScidaeMeasurementLine* w_measurement, gint x, G_GNUC_UNUSED gint y, ScidaeWidgetCursorAction action) {
 	g_return_if_fail(w_measurement->creator == SCIDAE_TYPE_PANGO_TEXT);
 	ScidaePangoTextMeasurementLine* measurement = (ScidaePangoTextMeasurementLine*)w_measurement;
 
 	gint idx,it;
 	pango2_line_x_to_index(measurement->line, x, &idx, &it);
 
-	scidae_text_set_cursor(SCIDAE_TEXT(widget), idx + it);
+	scidae_text_set_cursor(SCIDAE_TEXT(widget), action, idx + it);
+}
+
+static gint scidae_pango_widget_get_cursor_x(ScidaeWidget* widget, ScidaeMeasurementLine* w_measurement) {
+	g_return_val_if_fail(w_measurement->creator == SCIDAE_TYPE_PANGO_TEXT, 0);
+	ScidaePangoTextMeasurementLine* measurement = (ScidaePangoTextMeasurementLine*)w_measurement;
+
+	glong master;
+	scidae_text_get_cursors(SCIDAE_TEXT(widget), &master, NULL);
+
+	gint out;
+	pango2_line_index_to_x(measurement->line, master, 0, &out);
+	return out;
+}
+
+static void scidae_pango_text_widget_modify_cursor_on_measurement(ScidaeWidget* self, ScidaeMeasurementLine* w_measurement, ScidaeDirection direction, ScidaeWidgetCursorAction action) {
+	g_return_if_fail(w_measurement->creator == SCIDAE_TYPE_PANGO_TEXT);
+	ScidaePangoTextMeasurementLine* measurement = (ScidaePangoTextMeasurementLine*)w_measurement;
+
+	glong cur = pango2_line_get_start_index(measurement->line);
+	if (direction == SCIDAE_DIRECTION_FORWARD)
+		cur += pango2_line_get_length(measurement->line);
+
+	scidae_text_set_cursor(SCIDAE_TEXT(self), action, cur);
 }
 
 static void scidae_pango_text_class_init(ScidaePangoTextClass* class) {
@@ -144,6 +230,8 @@ static void scidae_pango_text_class_init(ScidaePangoTextClass* class) {
 	widget_class->render = scidae_pango_text_widget_render;
 
 	widget_class->move_cursor_to_pos = scidae_pango_widget_move_cursor_to_pos;
+	widget_class->get_cursor_x = scidae_pango_widget_get_cursor_x;
+	widget_class->modify_cursor_on_measurement = scidae_pango_text_widget_modify_cursor_on_measurement;
 }
 
 static void scidae_pango_text_init(ScidaePangoText*) {}

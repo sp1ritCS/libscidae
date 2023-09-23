@@ -1,6 +1,6 @@
 #include "scidaecanvas.h"
 
-#include "widget/scidaeparagraph.h"
+#include "widget/scidaecontainer.h"
 
 struct _ScidaeCanvas {
 	GtkWidget parent_instance;
@@ -154,13 +154,11 @@ void scidae_canvas_widget_size_allocate(GtkWidget* widget, int width, int height
 	gtk_adjustment_set_page_size(self->vadjustment, height);
 }
 
-static void scidae_canvas_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapshot) {
-	ScidaeCanvas* self = SCIDAE_CANVAS(widget);
+static void scidae_canvas_int_remeasure_if_needed(ScidaeCanvas* self) {
 	ScidaeWidget* child_widget = SCIDAE_WIDGET(self->child);
-
 	if (!self->latest || scidae_toplevel_should_remeasure(self->child)) {
 		gpointer prev = NULL;
-		ScidaeMeasurementResult measurement_r = scidae_widget_measure(child_widget, scidae_context_to_units(scidae_widget_get_context(child_widget), gtk_widget_get_width(widget)), 0, FALSE, SCIDAE_WIDGET_MEASUREMENT_NO_ATTRS, &prev);
+		ScidaeMeasurementResult measurement_r = scidae_widget_measure(child_widget, scidae_context_to_units(scidae_widget_get_context(child_widget), gtk_widget_get_width(GTK_WIDGET(self))), 0, FALSE, SCIDAE_WIDGET_MEASUREMENT_NO_ATTRS, &prev);
 		if (measurement_r.result != SCIDAE_MEASUREMENT_FINISH)
 			g_error("Unexpected measurement result!");
 		
@@ -172,6 +170,13 @@ static void scidae_canvas_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapsh
 		gtk_adjustment_set_upper(self->hadjustment, s_from_units(self->latest->width) * self->zoom);
 		gtk_adjustment_set_upper(self->vadjustment, s_from_units(self->latest->height) * self->zoom);
 	}
+}
+
+static void scidae_canvas_widget_snapshot(GtkWidget* widget, GtkSnapshot* snapshot) {
+	ScidaeCanvas* self = SCIDAE_CANVAS(widget);
+	ScidaeWidget* child_widget = SCIDAE_WIDGET(self->child);
+
+	scidae_canvas_int_remeasure_if_needed(self);
 
 	ScidaeToUnitsFun s_to_units = scidae_context_get_to_units(scidae_widget_get_context(child_widget));
 	ScidaeRectangle rect = SCIDAE_RECTANGLE_INIT(
@@ -249,33 +254,81 @@ static void scidae_canvas_im_commit(GtkIMContext*, gchar* str, ScidaeCanvas* sel
 	scidae_widget_insert_at_cursor(SCIDAE_WIDGET(self->child), str, -1);
 }
 
+static inline void scidae_canvas_mods_from_gdk(GdkModifierType state, ScidaeWidgetMovementModifier* mod, ScidaeWidgetCursorAction* cursor_action) {
+	if (mod) {
+		*mod = 0;
+		if (state & GDK_CONTROL_MASK)
+			*mod |= SCIDAE_MOVEMENT_MODIFIER_CONTROL;
+		if (state & GDK_ALT_MASK)
+			*mod |= SCIDAE_MOVEMENT_MODIFIER_ALT;
+	}
+
+	if (cursor_action) {
+		if (state & GDK_SHIFT_MASK)
+			*cursor_action = SCIDAE_CURSOR_ACTION_MOVE_MASTER;
+		else
+			*cursor_action = SCIDAE_CURSOR_ACTION_MOVE;
+	}
+}
+
 static void scidae_canvas_handle_input(GtkEventControllerKey*, guint keyval, G_GNUC_UNUSED guint keycode, GdkModifierType state, ScidaeCanvas* self) {
+	ScidaeWidgetMovementModifier mods;
+	ScidaeWidgetCursorAction action;
+	scidae_canvas_mods_from_gdk(state, &mods, &action);
 	switch (keyval) {
 		case GDK_KEY_Left:
-			scidae_widget_move_cursor_backward(SCIDAE_WIDGET(self->child), 0, SCIDAE_CURSOR_TYPE_PRIMARY);
+			scidae_widget_move_cursor(SCIDAE_WIDGET(self->child), SCIDAE_DIRECTION_BACKWARD, mods, action);
 			break;
 		case GDK_KEY_Right:
-			scidae_widget_move_cursor_forward(SCIDAE_WIDGET(self->child), 0, SCIDAE_CURSOR_TYPE_PRIMARY);
+			scidae_widget_move_cursor(SCIDAE_WIDGET(self->child), SCIDAE_DIRECTION_FORWARD, mods, action);
+			break;
+		case GDK_KEY_Up:
+			scidae_canvas_int_remeasure_if_needed(self);
+			if (SCIDAE_IS_CONTAINER(self->child))
+				scidae_container_move_cursor_vert((ScidaeContainer*)self->child, self->latest, action, SCIDAE_VERTICAL_DIRECTION_UPWARD);
+			break;
+		case GDK_KEY_Down:
+			scidae_canvas_int_remeasure_if_needed(self);
+			if (SCIDAE_IS_CONTAINER(self->child))
+				scidae_container_move_cursor_vert((ScidaeContainer*)self->child, self->latest, action, SCIDAE_VERTICAL_DIRECTION_DOWNWARD);
+			break;
+		case GDK_KEY_Home:
+			scidae_canvas_int_remeasure_if_needed(self);
+			if (SCIDAE_IS_CONTAINER(self->child))
+				scidae_container_move_cursor_to_line_term((ScidaeContainer*)self->child, self->latest, action, SCIDAE_DIRECTION_BACKWARD);
+			break;
+		case GDK_KEY_End:
+			scidae_canvas_int_remeasure_if_needed(self);
+			if (SCIDAE_IS_CONTAINER(self->child))
+				scidae_container_move_cursor_to_line_term((ScidaeContainer*)self->child, self->latest, action, SCIDAE_DIRECTION_FORWARD);
+			break;
+		case GDK_KEY_Return:
+			scidae_widget_insert_at_cursor(SCIDAE_WIDGET(self->child), "\n", -1);
 			break;
 		case GDK_KEY_BackSpace:
-			scidae_widget_delete_backward(SCIDAE_WIDGET(self->child), 0);
+			scidae_widget_delete(SCIDAE_WIDGET(self->child), SCIDAE_DIRECTION_BACKWARD, mods);
 			break;
 		case GDK_KEY_Delete:
-			scidae_widget_delete_forward(SCIDAE_WIDGET(self->child), 0);
+			scidae_widget_delete(SCIDAE_WIDGET(self->child), SCIDAE_DIRECTION_FORWARD, mods);
 			break;
 		default:
 			(void)0;
 	}
 }
 
-static void scidae_canvas_handle_mouse(GtkGestureClick*, gint, gdouble x, gdouble y, ScidaeCanvas* self) {
+static void scidae_canvas_handle_mouse(GtkGestureClick* gest, gint, gdouble x, gdouble y, ScidaeCanvas* self) {
+	GdkEvent* ev = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(gest));
+	GdkModifierType modifier = gdk_event_get_modifier_state(ev);
+	ScidaeWidgetCursorAction action;
+	scidae_canvas_mods_from_gdk(modifier, NULL, &action);
+
 	ScidaeToUnitsFun to_units = scidae_context_get_to_units(scidae_widget_get_context(SCIDAE_WIDGET(self->child)));
 	scidae_widget_move_cursor_to_pos(
 		SCIDAE_WIDGET(self->child),
 		self->latest,
 		to_units(gtk_adjustment_get_value(self->hadjustment) + x / self->zoom),
 		to_units(gtk_adjustment_get_value(self->vadjustment) + y / self->zoom),
-		SCIDAE_CURSOR_TYPE_PRIMARY
+		action
 	);
 }
 
@@ -304,6 +357,7 @@ static void scidae_canvas_init(ScidaeCanvas* self) {
 	gtk_widget_add_controller(GTK_WIDGET(self), ev);
 
 	GtkGesture* click = gtk_gesture_click_new();
+	gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), 1);
 	g_signal_connect(click, "pressed", G_CALLBACK(scidae_canvas_handle_mouse), self);
 	gtk_widget_add_controller(GTK_WIDGET(self), GTK_EVENT_CONTROLLER(click));
 }

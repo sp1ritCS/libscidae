@@ -10,8 +10,9 @@
 G_BEGIN_DECLS
 
 typedef enum {
-	SCIDAE_MEASUREMENT_HAS_CURSOR = 1 << 0,
-	SCIDAE_MEASUREMENT_HAS_SELECTION = 1 << 1,
+	SCIDAE_MEASUREMENT_HAS_MASTER_CURSOR = 1 << 0,
+	SCIDAE_MEASUREMENT_HAS_SLAVE_CURSOR = 1 << 1,
+//	SCIDAE_MEASUREMENT_ENDS_WITH_SELECTION = 1 << 2,
 } ScidaeMeasurementProps;
 
 #define SCIDAE_TYPE_MEASUREMENT_LINE (scidae_measurement_line_get_type())
@@ -19,7 +20,7 @@ typedef enum {
  * ScidaeMeasurementLine:
  * 
  * This structure should be returned by [vfunc@ScidaeWidget.measure].
- * It contains the measurment of one line, and widget specific behaviour. For
+ * It contains the measurement of one line, and widget specific behavior. For
  * this reason, the [iface@ScidaeContainer] that requested the measurement will
  * invoke the `del_fun` once the measurement is unneeded.
  */
@@ -125,14 +126,36 @@ typedef enum {
 } ScidaeWidgetMeasurementAttrs;
 
 typedef enum {
+	SCIDAE_CURSOR_TYPE_MASTER = 1 << 0,
+	SCIDAE_CURSOR_TYPE_SLAVE = 1 << 1,
+	SCIDAE_CURSOR_TYPE_BOTH = SCIDAE_CURSOR_TYPE_MASTER | SCIDAE_CURSOR_TYPE_SLAVE
+} ScidaeWidgetCursorType;
+typedef enum {
+	SCIDAE_MODIFY_CURSOR_DROP = 0,
+	SCIDAE_MODIFY_CURSOR_MOVE_START,
+	SCIDAE_MODIFY_CURSOR_MOVE_END,
+	SCIDAE_MODIFY_CURSOR_RESET,
+} ScidaeWidgetModifyCursorAction;
+
+typedef enum {
+	SCIDAE_DIRECTION_BACKWARD = -1,
+	SCIDAE_DIRECTION_FORWARD = 1
+} ScidaeDirection;
+
+typedef enum {
 	SCIDAE_MOVEMENT_MODIFIER_CONTROL = 1 << 0,
 	SCIDAE_MOVEMENT_MODIFIER_ALT = 1 << 1
 } ScidaeWidgetMovementModifier;
 
 typedef enum {
-	SCIDAE_CURSOR_TYPE_PRIMARY,
-	SCIDAE_CURSOR_TYPE_SECONDARY
-} ScidaeWidgetCursorType;
+	SCIDAE_CURSOR_ACTION_MOVE,
+	SCIDAE_CURSOR_ACTION_MOVE_MASTER
+} ScidaeWidgetCursorAction;
+
+typedef enum {
+	SCIDAE_DELETE_REGION_CURSOR_FROM_START,
+	SCIDAE_DELETE_REGION_CURSOR_TO_END
+} ScidaeWidgetDeleteRegion;
 
 struct _ScidaeWidgetClass {
 	GInitiallyUnownedClass parent_class;
@@ -145,17 +168,14 @@ struct _ScidaeWidgetClass {
 	GskRenderNode*(*render)(ScidaeWidget* self, ScidaeMeasurementLine* measurement, const ScidaeRectangle* area);
 
 	/* BEGIN EDITING FACILITES */
-	void(*set_cursor_start)(ScidaeWidget* self);
-	void(*set_cursor_end)(ScidaeWidget* self);
-	void(*drop_cursor)(ScidaeWidget* self);
-	void(*move_cursor_backward)(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor);
-	void(*move_cursor_forward)(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor);
-	void(*move_cursor_to_pos)(ScidaeWidget* self, ScidaeMeasurementLine* measurement, gint x, gint y, ScidaeWidgetCursorType cursor);
-
+	void(*modify_cursor)(ScidaeWidget* self, ScidaeWidgetCursorType cursor, ScidaeWidgetModifyCursorAction action);
+	void(*move_cursor)(ScidaeWidget* self, ScidaeDirection direction, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorAction action);
+	void(*move_cursor_to_pos)(ScidaeWidget* self, ScidaeMeasurementLine* measurement, gint x, gint y, ScidaeWidgetCursorAction action);
+	gint(*get_cursor_x)(ScidaeWidget* self, ScidaeMeasurementLine* measurement);
+	void(*modify_cursor_on_measurement)(ScidaeWidget* self, ScidaeMeasurementLine* measurement, ScidaeDirection direction, ScidaeWidgetCursorAction action);
 	void(*insert_at_cursor)(ScidaeWidget* self, const gchar* text, gssize len);
-
-	void(*delete_backward)(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers);
-	void(*delete_forward)(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers);
+	void(*delete)(ScidaeWidget* self, ScidaeDirection direction, ScidaeWidgetMovementModifier modifiers);
+	void(*delete_region)(ScidaeWidget* self, ScidaeWidgetDeleteRegion region);
 };
 
 /**
@@ -163,7 +183,7 @@ struct _ScidaeWidgetClass {
  * @self: the widget
  *
  * Get the content of any widget as markdown. The intended use is that the
- * previous widget may merge this one if the need arrises.
+ * previous widget may merge this one if the need arises.
  * Returns: (transfer full): the content as markdown
  */
 gchar* scidae_widget_get_markdown(ScidaeWidget* self);
@@ -207,7 +227,7 @@ ScidaeMeasurementResult scidae_widget_measure(ScidaeWidget* self, gint width, gi
  * @measurement: The measurement of the widget
  * @area: (nullable): The area that will be rendered
  *
- * Get a render node from the respecitve widget. If area is %NULL, the
+ * Get a render node from the respective widget. If area is %NULL, the
  * entire area as specified in %measurement will be rendered.
  * Returns: (transfer full): A render node
  */
@@ -231,16 +251,89 @@ ScidaeContext* scidae_widget_get_context(ScidaeWidget* self);
  */
 void scidae_widget_set_context(ScidaeWidget* self, ScidaeContext* context);
 
-/* BEGIN EDITING FACILITES */
+/* BEGIN EDITING FACILITIES */
 
-void scidae_widget_move_cursor_backward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor);
-void scidae_widget_move_cursor_forward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor);
-void scidae_widget_move_cursor_to_pos(ScidaeWidget* self, ScidaeMeasurementLine* measurement, gint x, gint y, ScidaeWidgetCursorType cursor);
+/**
+ * scidae_widget_modify_cursor:
+ * @self: the widget to modify the state of
+ * @cursor: what cursors should `action` apply to
+ * @action: the action to apply (drop, move to start, move to end)
+ *
+ * Modify the cursor state of a widget. Since this doesn't cause bubbled
+ * updating of parent widgets, this method should only be called internally or
+ * if you are know what you are doing (you probably don't).
+ */
+void scidae_widget_modify_cursor(ScidaeWidget* self, ScidaeWidgetCursorType cursor, ScidaeWidgetModifyCursorAction action);
 
+/**
+ * scidae_widget_move_cursor:
+ * @self: the widget to move the cursor in
+ * @direction: the direction to move the cursor in
+ * @modifiers: modifier keys depressed during the moving action
+ * @action: the cursor action to execute
+ *
+ * Moves the cursor one unit (specified by `modifiers`) in the direction
+ * specified by `direction`.
+ */
+void scidae_widget_move_cursor(ScidaeWidget* self, ScidaeDirection direction, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorAction action);
+
+/**
+ * scidae_widget_move_cursor_to_pos:
+ * @self: the widget to move the cursor to
+ * @measurement: the current measurement of `self`
+ * @x: the approximate x-coordinate of the new cursor position in context units
+ * @y: the approximate y-coordinate of the new cursor position in context units
+ * @action: the cursor action to execute
+ *
+ * Moves the cursor to a position approximatly specified by the x and y
+ * coordinates.
+ */
+void scidae_widget_move_cursor_to_pos(ScidaeWidget* self, ScidaeMeasurementLine* measurement, gint x, gint y, ScidaeWidgetCursorAction action);
+
+/**
+ * scidae_widget_get_cursor_x:
+ * @self: the widget
+ * @measurement: the current measurement of `self`
+ *
+ * Get the current x-coordinate of the cursor based on measurement.
+ * Returns: the x-coordinate of the cursor
+ */
+gint scidae_widget_get_cursor_x(ScidaeWidget* self, ScidaeMeasurementLine* measurement);
+
+/**
+ * scidae_widget_modify_cursor_on_measurement:
+ * @self: the widget
+ * @measurement: the current measurement of `self`
+ * @direction: the direction to move the cursor in
+ * @action: the cursor action to execute
+ *
+ * Moves the cursor to the start or end of a measurement based on
+ * `direction`,
+ */
+void scidae_widget_modify_cursor_on_measurement(ScidaeWidget* self, ScidaeMeasurementLine* measurement, ScidaeDirection direction, ScidaeWidgetCursorAction action);
+
+/**
+ * scidae_widget_insert_at_cursor:
+ * @self: the widget to insert text into
+ * @text: the text to insert
+ * @len: the length of the text to insert (might be -1 if the text is NULL terminated)
+ *
+ * Inserts a string of text at the current position of the cursor. If a
+ * selection exists, it should delete the selection first.
+ */
 void scidae_widget_insert_at_cursor(ScidaeWidget* self, const gchar* text, gssize len);
 
-void scidae_widget_delete_backward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers);
-void scidae_widget_delete_forward(ScidaeWidget* self, ScidaeWidgetMovementModifier modifiers);
+/**
+ * scidae_widget_delete:
+ * @self: the widget to delete text from
+ * @direction: the direction to delete text from
+ * @modifiers: modifier keys depressed during the moving action
+ *
+ * Deletes a unit of text (based on `modifiers`) in the direction
+ * specified by `direction`. If a selection exists it deletes the
+ * selection instead.
+ */
+void scidae_widget_delete(ScidaeWidget* self, ScidaeDirection direction, ScidaeWidgetMovementModifier modifiers);
 
 G_END_DECLS
 

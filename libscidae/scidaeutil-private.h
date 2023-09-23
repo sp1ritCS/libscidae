@@ -2,6 +2,7 @@
 #define __SCIDAEUTIL_PRIVATE_H__
 
 #include <scidaeutil.h>
+#include <widget/scidaewidget.h>
 
 G_BEGIN_DECLS
 

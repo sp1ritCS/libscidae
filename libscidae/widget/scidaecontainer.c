@@ -7,6 +7,9 @@ static void scidae_container_default_init(ScidaeContainerInterface* iface) {
 	iface->get_children = NULL;
 	iface->get_prev = NULL;
 	iface->get_next = NULL;
+	iface->update_cursor = NULL;
+	iface->move_cursor_to_line_term = NULL;
+	iface->move_cursor_vert = NULL;
 	iface->mark_child_remeasure = NULL;
 }
 
@@ -38,11 +41,25 @@ GList* scidae_container_get_children(ScidaeContainer* self) {
 	return iface->get_children(self);
 }
 
-void scidae_container_update_cursor(ScidaeContainer* self, ScidaeWidget* cursor_holder) {
+void scidae_container_update_cursor(ScidaeContainer* self, ScidaeWidgetCursorType type, ScidaeWidget* cursor_holder) {
 	g_return_if_fail(SCIDAE_IS_CONTAINER(self));
 	ScidaeContainerInterface* iface = SCIDAE_CONTAINER_GET_IFACE(self);
 	g_return_if_fail(iface->update_cursor != NULL);
-	iface->update_cursor(self, cursor_holder);
+	iface->update_cursor(self, type, cursor_holder);
+}
+
+void scidae_container_move_cursor_to_line_term(ScidaeContainer* self, ScidaeMeasurementLine* measurement, ScidaeWidgetCursorAction action, ScidaeDirection direction) {
+	g_return_if_fail(SCIDAE_IS_CONTAINER(self));
+	ScidaeContainerInterface* iface = SCIDAE_CONTAINER_GET_IFACE(self);
+	g_return_if_fail(iface->move_cursor_to_line_term != NULL);
+	iface->move_cursor_to_line_term(self, measurement, action, direction);
+}
+
+gboolean scidae_container_move_cursor_vert(ScidaeContainer* self, ScidaeMeasurementLine* measurement, ScidaeWidgetCursorAction action, ScidaeContainerVerticalDirection direction) {
+	g_return_val_if_fail(SCIDAE_IS_CONTAINER(self), FALSE);
+	ScidaeContainerInterface* iface = SCIDAE_CONTAINER_GET_IFACE(self);
+	g_return_val_if_fail(iface->move_cursor_vert != NULL, FALSE);
+	return iface->move_cursor_vert(self, measurement, action, direction);
 }
 
 void scidae_container_mark_child_remeasure(ScidaeContainer* self, ScidaeWidget* child) {

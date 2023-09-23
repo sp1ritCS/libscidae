@@ -11,8 +11,8 @@ typedef struct {
 	GArray* word_breaks;
 	GArray* sentence_breaks;
 
-	glong primary_cursor;
-	glong secondary_cursor;
+	glong master_cursor;
+	glong slave_cursor;
 } ScidaeTextPrivate;
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (ScidaeText, scidae_text, SCIDAE_TYPE_WIDGET)
@@ -37,7 +37,7 @@ static void scidae_text_regenerate_break(ScidaeText* self, GArray* breaks, size_
 static void scidae_text_body_modified(ScidaeText* self) {
 	ScidaeTextPrivate* priv = scidae_text_get_instance_private(SCIDAE_TEXT(self));
 	if (priv->body->len == 0) {
-		g_info("Text widget %p is empty, dropping widget.\n", (void*)self);
+		g_info("Text widget %p is empty, dropping widget.", (void*)self);
 		scidae_widget_set_parent((ScidaeWidget*)self, NULL);
 		return;
 	}
@@ -113,26 +113,53 @@ static void scidae_text_widget_merge_markdown_end(ScidaeWidget* widget, const gc
 	scidae_text_body_modified(SCIDAE_TEXT(widget));
 }
 
-static void scidae_text_widget_set_cursor_start(ScidaeWidget* widget) {
-	ScidaeTextPrivate* priv = scidae_text_get_instance_private(SCIDAE_TEXT(widget));
-	priv->primary_cursor = 0;
-	priv->secondary_cursor = 0;
+static inline void scidae_text_apply_action_to_cursor(ScidaeText* self, glong* cursor, ScidaeWidgetModifyCursorAction action) {
+	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
+	switch (action) {
+		case SCIDAE_MODIFY_CURSOR_DROP:
+			*cursor = -1;
+			break;
+		case SCIDAE_MODIFY_CURSOR_MOVE_START:
+			*cursor = 0;
+			break;
+		case SCIDAE_MODIFY_CURSOR_MOVE_END:
+			*cursor = priv->body->len;
+			break;
+		case SCIDAE_MODIFY_CURSOR_RESET:
+			g_return_if_reached(); // should not be reached as already handled.
+	}
+}
+static void scidae_text_widget_modify_cursor(ScidaeWidget* widget, ScidaeWidgetCursorType cursor, ScidaeWidgetModifyCursorAction action) {
+	ScidaeText* self = SCIDAE_TEXT(widget);
+	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
+
+	if (action == SCIDAE_MODIFY_CURSOR_RESET) {
+		g_return_if_fail((cursor & SCIDAE_CURSOR_TYPE_BOTH) != SCIDAE_CURSOR_TYPE_BOTH);
+			if (cursor & SCIDAE_CURSOR_TYPE_SLAVE)
+				priv->slave_cursor = priv->master_cursor;
+			else if (cursor & SCIDAE_CURSOR_TYPE_MASTER)
+				priv->master_cursor = priv->slave_cursor;
+		return;
+	}
+
+	if (cursor & SCIDAE_CURSOR_TYPE_MASTER)
+		scidae_text_apply_action_to_cursor(self, &priv->master_cursor, action);
+	if (cursor & SCIDAE_CURSOR_TYPE_SLAVE)
+		scidae_text_apply_action_to_cursor(self, &priv->slave_cursor, action);
 }
 
-static void scidae_text_widget_set_cursor_end(ScidaeWidget* widget) {
-	ScidaeTextPrivate* priv = scidae_text_get_instance_private(SCIDAE_TEXT(widget));
-	priv->primary_cursor = priv->body->len;
-	priv->secondary_cursor = priv->body->len;
+static inline GArray* scidae_text_get_breaks_from_mods(ScidaeText* self, ScidaeWidgetMovementModifier mods) {
+	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
+
+	if (mods & SCIDAE_MOVEMENT_MODIFIER_ALT)
+		return priv->sentence_breaks;
+	if (mods & SCIDAE_MOVEMENT_MODIFIER_CONTROL)
+		return priv->word_breaks;
+	return priv->char_breaks;
 }
 
-static void scidae_text_widget_drop_cursor(ScidaeWidget* widget) {
-	ScidaeTextPrivate* priv = scidae_text_get_instance_private(SCIDAE_TEXT(widget));
-	priv->primary_cursor = -1;
-	priv->secondary_cursor = -1;
-}
-
-static ScidaeTextMovementDirection scidae_text_cursor_move_fun(G_GNUC_UNUSED ScidaeText* self, ScidaeTextMovementDirection direction, glong* target, GArray* breaks) {
-	g_assert(direction != SCIDAE_TEXT_MOVEMENT_NONE);
+static ScidaeTextMovementDirection scidae_text_cursor_move_fun(ScidaeText* self, ScidaeDirection direction, GArray* breaks) {
+	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
 
 	gint low = 0;
 	gint high = breaks->len;
@@ -141,164 +168,175 @@ static ScidaeTextMovementDirection scidae_text_cursor_move_fun(G_GNUC_UNUSED Sci
 		gint mid = low + (high - low) / 2;
 		glong cur = g_array_index(breaks, glong, mid);
 
-		if (cur == *target) {
-			if (direction == SCIDAE_TEXT_MOVEMENT_FORWARD) {
+		if (cur == priv->master_cursor) {
+			if (direction == SCIDAE_DIRECTION_FORWARD) {
 				if (mid + 1 < (gint)breaks->len) {
-					*target = g_array_index(breaks, glong, mid + 1);
+					priv->master_cursor = g_array_index(breaks, glong, mid + 1);
 					return SCIDAE_TEXT_MOVEMENT_NONE;
 				} else {
 					return SCIDAE_TEXT_MOVEMENT_FORWARD;
 				}
-			} else if (direction == SCIDAE_TEXT_MOVEMENT_BACKWARD) {
+			} else if (direction == SCIDAE_DIRECTION_BACKWARD) {
 				if (mid - 1 >= 0) {
-					*target = g_array_index(breaks, glong, mid - 1);
+					priv->master_cursor = g_array_index(breaks, glong, mid - 1);
 					return SCIDAE_TEXT_MOVEMENT_NONE;
 				} else {
 					return SCIDAE_TEXT_MOVEMENT_BACKWARD;
 				}
 			} else {
-				__builtin_unreachable();
+				g_return_val_if_reached(SCIDAE_TEXT_MOVEMENT_NONE);
 			}
-		} else if (cur < *target) {
+		} else if (cur < priv->master_cursor) {
 			low = mid + 1;
 		} else {
 			high = mid - 1;
 		}
 	}
 
-	if (direction == SCIDAE_TEXT_MOVEMENT_FORWARD) {
+	if (direction == SCIDAE_DIRECTION_FORWARD) {
 		if (low < (gint)breaks->len) {
-			*target = g_array_index(breaks, glong, low);
+			priv->master_cursor = g_array_index(breaks, glong, low);
 			return SCIDAE_TEXT_MOVEMENT_NONE;
 		} else {
 			return SCIDAE_TEXT_MOVEMENT_FORWARD;
 		}
-	} else if (direction == SCIDAE_TEXT_MOVEMENT_BACKWARD) {
+	} else if (direction == SCIDAE_DIRECTION_BACKWARD) {
 		if (high >= 0) {
-			*target = g_array_index(breaks, glong, high);
+			priv->master_cursor = g_array_index(breaks, glong, high);
 			return SCIDAE_TEXT_MOVEMENT_NONE;
 		} else {
 			return SCIDAE_TEXT_MOVEMENT_BACKWARD;
 		}
 	} else {
-		__builtin_unreachable();
+		g_return_val_if_reached(SCIDAE_TEXT_MOVEMENT_NONE);
 	}
 }
 
-static void scidae_text_move_cursor_generic(ScidaeText* self, ScidaeTextMovementDirection direction, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor) {
-	g_assert(direction != SCIDAE_TEXT_MOVEMENT_NONE);
+static void scidae_text_widget_move_cursor(ScidaeWidget* widget, ScidaeDirection direction, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorAction action) {
+	ScidaeText* self = SCIDAE_TEXT(widget);
 	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
-	glong* cursor_pos;
-	switch (cursor) {
-		case SCIDAE_CURSOR_TYPE_PRIMARY:
-			cursor_pos = &priv->primary_cursor;
-			break;
-		case SCIDAE_CURSOR_TYPE_SECONDARY:
-			cursor_pos = &priv->secondary_cursor;
-			break;
-		default:
-			g_critical("Found invalid cursor type %d.", cursor);
-			return;
-	}
+	GArray* breaks = scidae_text_get_breaks_from_mods(self, modifiers);
 
 	ScidaeTextMovementDirection movdir = SCIDAE_TEXT_MOVEMENT_NONE;
-	if (*cursor_pos < 0) {
-		if (direction == SCIDAE_TEXT_MOVEMENT_BACKWARD)
-			*cursor_pos = priv->body->len;
-		else if (direction == SCIDAE_TEXT_MOVEMENT_FORWARD) {
-			*cursor_pos = 0;
-			movdir = scidae_text_cursor_move_fun(self, direction, cursor_pos, priv->char_breaks);
+	if (priv->master_cursor < 0) {
+		if (direction == SCIDAE_DIRECTION_BACKWARD)
+			priv->master_cursor = priv->body->len;
+		else if (direction == SCIDAE_DIRECTION_FORWARD) {
+			priv->master_cursor = 0;
+			movdir = scidae_text_cursor_move_fun(self, direction, breaks);
 		}
-	} else if (
-		(direction == SCIDAE_TEXT_MOVEMENT_BACKWARD && *cursor_pos == 0) ||
-		(direction == SCIDAE_TEXT_MOVEMENT_FORWARD && *cursor_pos == (glong)priv->body->len)
-	) {
-		movdir = direction;
-	} else
-		movdir = scidae_text_cursor_move_fun(self, direction, cursor_pos, priv->char_breaks);
+	} else if (direction == SCIDAE_DIRECTION_BACKWARD && priv->master_cursor == 0)
+		movdir = SCIDAE_TEXT_MOVEMENT_BACKWARD;
+	else if (direction == SCIDAE_DIRECTION_FORWARD && priv->master_cursor == (glong)priv->body->len)
+		movdir = SCIDAE_TEXT_MOVEMENT_FORWARD;
+	else
+		movdir = scidae_text_cursor_move_fun(self, direction, breaks);
 
-	ScidaeWidget* widget = SCIDAE_WIDGET(self);
 	switch (movdir) {
 		case SCIDAE_TEXT_MOVEMENT_BACKWARD: {
 			ScidaeContainer* parent = scidae_widget_get_parent(widget);
 			ScidaeWidget* prev = scidae_container_get_prev(parent, widget);
 			if (prev) {
-				scidae_widget_move_cursor_backward(prev, modifiers, cursor);
-				*cursor_pos = -1;
-				scidae_container_update_cursor(parent, prev);
+				scidae_widget_move_cursor(prev, SCIDAE_DIRECTION_BACKWARD, modifiers, action);
+				priv->master_cursor = -1;
+				ScidaeWidgetCursorType type = SCIDAE_CURSOR_TYPE_MASTER;
+				if (action == SCIDAE_CURSOR_ACTION_MOVE)
+					type |= SCIDAE_CURSOR_TYPE_BOTH;
+				scidae_container_update_cursor(parent, type, prev);
 			} else {
-				*cursor_pos = 0;
+				priv->master_cursor = 0;
 			}
 		} break;
 		case SCIDAE_TEXT_MOVEMENT_FORWARD: {
 			ScidaeContainer* parent = scidae_widget_get_parent(widget);
 			ScidaeWidget* next = scidae_container_get_next(parent, widget);
 			if (next) {
-				scidae_widget_move_cursor_forward(next, modifiers, cursor);
-				*cursor_pos = -1;
-				scidae_container_update_cursor(parent, next);
+				scidae_widget_move_cursor(next, SCIDAE_DIRECTION_FORWARD, modifiers, action);
+				priv->master_cursor = -1;
+				ScidaeWidgetCursorType type = SCIDAE_CURSOR_TYPE_MASTER;
+				if (action == SCIDAE_CURSOR_ACTION_MOVE)
+					type |= SCIDAE_CURSOR_TYPE_BOTH;
+				scidae_container_update_cursor(parent, type, next);
 			} else {
-				*cursor_pos = priv->body->len;
+				priv->master_cursor = priv->body->len;
 			}
 		} break;
 		default:
 			(void)0;
 	}
+	if (action == SCIDAE_CURSOR_ACTION_MOVE)
+		priv->slave_cursor = priv->master_cursor;
 
 	scidae_container_mark_child_remeasure(scidae_widget_get_parent(widget), widget);
 }
 
-static void scidae_text_widget_move_cursor_backward(ScidaeWidget* widget, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor) {
-	ScidaeText* self = SCIDAE_TEXT(widget);
-	scidae_text_move_cursor_generic(self, SCIDAE_TEXT_MOVEMENT_BACKWARD, modifiers, cursor);
-}
-static void scidae_text_widget_move_cursor_forward(ScidaeWidget* widget, ScidaeWidgetMovementModifier modifiers, ScidaeWidgetCursorType cursor) {
-	ScidaeText* self = SCIDAE_TEXT(widget);
-	scidae_text_move_cursor_generic(self, SCIDAE_TEXT_MOVEMENT_FORWARD, modifiers, cursor);
+static inline void scidae_text_delete_selection_int(ScidaeText* self) {
+	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
+
+	glong lesser = priv->master_cursor;
+	glong greater = priv->slave_cursor;
+	if (priv->master_cursor > priv->slave_cursor) {
+		lesser = priv->slave_cursor;
+		greater = priv->master_cursor;
+	}
+	g_string_erase(priv->body, lesser, greater - lesser);
+	priv->master_cursor = lesser;
+	priv->slave_cursor = lesser;
 }
 
 static void scidae_text_widget_insert_at_cursor(ScidaeWidget* widget, const gchar* text, gssize len) {
-	ScidaeTextPrivate* priv = scidae_text_get_instance_private(SCIDAE_TEXT(widget));
-	if (priv->primary_cursor < 0) {
+	ScidaeText* self = SCIDAE_TEXT(widget);
+	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
+	if (priv->master_cursor < 0) {
 		g_critical("Attempt to insert into widget without cursor.");
 		return;
 	}
 
-	g_string_insert_len(priv->body, priv->primary_cursor, text, len);
-	priv->primary_cursor += len >= 0 ? len : strlen(text);
+	if (priv->master_cursor != priv->slave_cursor)
+		scidae_text_delete_selection_int(self);
 
-	scidae_text_body_modified(SCIDAE_TEXT(widget));
+	g_string_insert_len(priv->body, priv->master_cursor, text, len);
+	priv->master_cursor += len >= 0 ? (guint)len : strlen(text);
+	priv->slave_cursor = priv->master_cursor;
+
+	scidae_text_body_modified(self);
 }
 
-static void scidae_text_delete_from_neighbor_widget(ScidaeText* self, ScidaeTextMovementDirection direction, ScidaeWidgetMovementModifier modifiers) {
-	g_assert(direction != SCIDAE_TEXT_MOVEMENT_NONE);
-
+static void scidae_text_delete_from_neighbor_widget(ScidaeText* self, ScidaeDirection direction, ScidaeWidgetMovementModifier modifiers) {
 	ScidaeContainer* parent = scidae_widget_get_parent((ScidaeWidget*)self);
 	switch (direction) {
-		case SCIDAE_TEXT_MOVEMENT_BACKWARD: {
+		case SCIDAE_DIRECTION_BACKWARD: {
 			ScidaeWidget* prev = scidae_container_get_prev(parent, (ScidaeWidget*)self);
 			if (!prev)
 				return;
-			scidae_widget_set_cursor_end(prev);
-			scidae_container_update_cursor(parent, prev);
-			scidae_widget_delete_backward(prev, modifiers);
+			scidae_widget_modify_cursor(prev, SCIDAE_CURSOR_TYPE_BOTH, SCIDAE_MODIFY_CURSOR_MOVE_END);
+			scidae_container_update_cursor(parent, SCIDAE_CURSOR_TYPE_BOTH, prev);
+			scidae_widget_delete(prev, SCIDAE_DIRECTION_BACKWARD, modifiers);
 		} break;
-		case SCIDAE_TEXT_MOVEMENT_FORWARD: {
+		case SCIDAE_DIRECTION_FORWARD: {
 			ScidaeWidget* next = scidae_container_get_next(parent, (ScidaeWidget*)self);
 			if (!next)
 				return;
-			scidae_widget_set_cursor_start(next);
-			scidae_container_update_cursor(parent, next);
-			scidae_widget_delete_backward(next, modifiers);
+			scidae_widget_modify_cursor(next, SCIDAE_CURSOR_TYPE_BOTH, SCIDAE_MODIFY_CURSOR_MOVE_START);
+			scidae_container_update_cursor(parent, SCIDAE_CURSOR_TYPE_BOTH, next);
+			scidae_widget_delete(next, SCIDAE_DIRECTION_FORWARD, modifiers);
 		} break;
 		default:
 			g_return_if_reached();
 	}
 }
 
-static void scidae_text_delete_section_from_breaks(ScidaeText* self, ScidaeTextMovementDirection direction, ScidaeWidgetMovementModifier modifiers, glong target, GArray* breaks) {
-	g_assert(direction != SCIDAE_TEXT_MOVEMENT_NONE);
+static void scidae_text_widget_delete(ScidaeWidget* widget, ScidaeDirection direction, ScidaeWidgetMovementModifier modifiers) {
+	ScidaeText* self = SCIDAE_TEXT(widget);
 	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
+
+	if (priv->master_cursor != priv->slave_cursor) {
+		scidae_text_delete_selection_int(self);
+		scidae_text_body_modified(self);
+		return;
+	}
+
+	GArray* breaks = scidae_text_get_breaks_from_mods(self, modifiers);
 
 	gsize left;
 	gsize right;
@@ -310,63 +348,76 @@ static void scidae_text_delete_section_from_breaks(ScidaeText* self, ScidaeTextM
 		guint mid = low + (high-low)/2;
 		glong cur = g_array_index(breaks, glong, mid);
 
-		if (cur == target) {
-			if (direction == SCIDAE_TEXT_MOVEMENT_BACKWARD) {
+		if (cur == priv->master_cursor) {
+			if (direction == SCIDAE_DIRECTION_BACKWARD) {
 				right = mid;
 				if ((gint)mid - 1 >= 0) {
 					left = mid - 1;
 					goto index_set;
 				} else {
-					scidae_text_delete_from_neighbor_widget(self, SCIDAE_TEXT_MOVEMENT_BACKWARD, modifiers);
+					scidae_text_delete_from_neighbor_widget(self, SCIDAE_DIRECTION_BACKWARD, modifiers);
 					return;
 				}
-			} else if (direction == SCIDAE_TEXT_MOVEMENT_FORWARD) {
+			} else if (direction == SCIDAE_DIRECTION_FORWARD) {
 				left = mid;
 				if (mid + 1 < breaks->len) {
 					right = mid + 1;
 					goto index_set;
 				} else {
-					scidae_text_delete_from_neighbor_widget(self, SCIDAE_TEXT_MOVEMENT_FORWARD, modifiers);
+					scidae_text_delete_from_neighbor_widget(self, SCIDAE_DIRECTION_FORWARD, modifiers);
 					return;
 				}
 			} else {
-				__builtin_unreachable();
+				g_return_if_reached();
 			}
-		} else if (cur < target)
+		} else if (cur < priv->master_cursor)
 			low = mid + 1;
 		else
 			high = mid - 1;
 	}
 
 	if (G_UNLIKELY(high < 0)) {
-		scidae_text_delete_from_neighbor_widget(self, SCIDAE_TEXT_MOVEMENT_BACKWARD, modifiers);
+		scidae_text_delete_from_neighbor_widget(self, SCIDAE_DIRECTION_BACKWARD, modifiers);
 		return;
 	}
 	if (G_UNLIKELY(low >= (gint)breaks->len)) {
-		scidae_text_delete_from_neighbor_widget(self, SCIDAE_TEXT_MOVEMENT_FORWARD, modifiers);
+		scidae_text_delete_from_neighbor_widget(self, SCIDAE_DIRECTION_FORWARD, modifiers);
 		return;
 	}
 	left = high;
 	right = low;
-index_set:
+
+index_set: (void)0; // workarround for wierd clang-analyze bug
 	gssize pos = g_array_index(breaks, glong, left);
 	gssize len = (gssize)g_array_index(breaks, glong, right) - pos;
 
 	g_string_erase(priv->body, pos, len);
-	priv->primary_cursor = pos;
+	priv->master_cursor = pos;
+	priv->slave_cursor = pos;
 	scidae_text_body_modified(self);
 }
 
-static void scidae_text_widget_delete_backward(ScidaeWidget* widget, ScidaeWidgetMovementModifier modifiers) {
+void scidae_text_widget_delete_region(ScidaeWidget* widget, ScidaeWidgetDeleteRegion region) {
 	ScidaeText* self = SCIDAE_TEXT(widget);
 	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
-	scidae_text_delete_section_from_breaks(self, SCIDAE_TEXT_MOVEMENT_BACKWARD, modifiers, priv->primary_cursor, priv->char_breaks);
-}
 
-static void scidae_text_widget_delete_forward(ScidaeWidget* widget, ScidaeWidgetMovementModifier modifiers) {
-	ScidaeText* self = SCIDAE_TEXT(widget);
-	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
-	scidae_text_delete_section_from_breaks(self, SCIDAE_TEXT_MOVEMENT_FORWARD, modifiers, priv->primary_cursor, priv->char_breaks);
+	glong* cursor = &priv->master_cursor;
+	if (*cursor < 0)
+		cursor = &priv->slave_cursor;
+	g_return_if_fail(*cursor >= 0);
+
+	switch (region) {
+		case SCIDAE_DELETE_REGION_CURSOR_FROM_START:
+			g_string_erase(priv->body, 0, *cursor - 0);
+			*cursor = 0;
+			scidae_text_body_modified(self);
+			break;
+		case SCIDAE_DELETE_REGION_CURSOR_TO_END:
+			g_string_erase(priv->body, *cursor, priv->body->len - *cursor);
+			*cursor = priv->body->len;
+			scidae_text_body_modified(self);
+			break;
+	}
 }
 
 static void scidae_text_class_init(ScidaeTextClass* class) {
@@ -381,14 +432,11 @@ static void scidae_text_class_init(ScidaeTextClass* class) {
 	widget_class->merge_markdown_start = scidae_text_widget_merge_markdown_start;
 	widget_class->merge_markdown_end = scidae_text_widget_merge_markdown_end;
 	
-	widget_class->set_cursor_start = scidae_text_widget_set_cursor_start;
-	widget_class->set_cursor_end = scidae_text_widget_set_cursor_end;
-	widget_class->drop_cursor = scidae_text_widget_drop_cursor;
-	widget_class->move_cursor_backward = scidae_text_widget_move_cursor_backward;
-	widget_class->move_cursor_forward = scidae_text_widget_move_cursor_forward;
+	widget_class->modify_cursor = scidae_text_widget_modify_cursor;
+	widget_class->move_cursor = scidae_text_widget_move_cursor;
 	widget_class->insert_at_cursor = scidae_text_widget_insert_at_cursor;
-	widget_class->delete_backward = scidae_text_widget_delete_backward;
-	widget_class->delete_forward = scidae_text_widget_delete_forward;
+	widget_class->delete = scidae_text_widget_delete;
+	widget_class->delete_region = scidae_text_widget_delete_region;
 
 	/**
 	 * ScidaeText:body: (attributes org.gtk.Property.get=scidae_text_get_body org.gtk.Property.set=scidae_text_set_body)
@@ -413,8 +461,8 @@ static void scidae_text_init(ScidaeText* self) {
 	priv->word_breaks = g_array_new(FALSE, FALSE, sizeof(gsize));
 	priv->sentence_breaks = g_array_new(FALSE, FALSE, sizeof(gsize));
 
-	priv->primary_cursor = -1;
-	priv->secondary_cursor = -1;
+	priv->master_cursor = -1;
+	priv->slave_cursor = -1;
 }
 
 const gchar* scidae_text_get_body(ScidaeText* self) {
@@ -434,24 +482,34 @@ void scidae_text_set_body(ScidaeText* self, const gchar* text) {
 	scidae_text_body_modified(self);
 }
 
-void scidae_text_get_cursors(ScidaeText* self, glong* primary, glong* secondary) {
+void scidae_text_get_cursors(ScidaeText* self, glong* master, glong* slave) {
 	g_return_if_fail(SCIDAE_IS_TEXT(self));
 	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
 
-	if (primary)
-		*primary = priv->primary_cursor;
-	if (secondary)
-		*secondary = priv->secondary_cursor;
+	if (master)
+		*master = priv->master_cursor;
+	if (slave)
+		*slave = priv->slave_cursor;
 }
 
-void scidae_text_set_cursor(ScidaeText* self, glong cursor) {
+void scidae_text_set_cursor(ScidaeText* self, ScidaeWidgetCursorAction action, glong cursor) {
 	g_return_if_fail(SCIDAE_IS_TEXT(self));
 	ScidaeTextPrivate* priv = scidae_text_get_instance_private(self);
-	priv->primary_cursor = cursor;
-	priv->secondary_cursor = cursor;
 
-	ScidaeWidget* widget = (ScidaeWidget*)self;
-	ScidaeContainer* parent = scidae_widget_get_parent(widget);
-	scidae_container_mark_child_remeasure(parent, widget);
-	scidae_container_update_cursor(parent, widget);
+	if (action == SCIDAE_CURSOR_ACTION_MOVE) {
+		priv->master_cursor = cursor;
+		priv->slave_cursor = cursor;
+
+		ScidaeWidget* widget = (ScidaeWidget*)self;
+		ScidaeContainer* parent = scidae_widget_get_parent(widget);
+		scidae_container_update_cursor(parent, SCIDAE_CURSOR_TYPE_BOTH, widget);
+		scidae_container_mark_child_remeasure(parent, widget);
+	} else if (action == SCIDAE_CURSOR_ACTION_MOVE_MASTER) {
+		priv->master_cursor = cursor;
+
+		ScidaeWidget* widget = (ScidaeWidget*)self;
+		ScidaeContainer* parent = scidae_widget_get_parent(widget);
+		scidae_container_update_cursor(parent, SCIDAE_CURSOR_TYPE_MASTER, widget);
+		scidae_container_mark_child_remeasure(parent, widget);
+	}
 }
